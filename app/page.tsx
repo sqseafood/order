@@ -1,13 +1,28 @@
 import fs from "fs";
 import path from "path";
+import { list } from "@vercel/blob";
 import type { Product } from "@/types";
 import ProductBrowser from "@/components/ProductBrowser";
 
 export const dynamic = "force-dynamic";
 
-export default function HomePage() {
+async function loadProducts(): Promise<Product[]> {
+  try {
+    const { blobs } = await list({ prefix: "products.json" });
+    const blob = blobs.find((b) => b.pathname === "products.json");
+    if (blob) {
+      const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
+      return await res.json();
+    }
+  } catch {
+    // fall through to local file
+  }
   const filePath = path.join(process.cwd(), "data", "products.json");
-  const products: Product[] = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+  return JSON.parse(fs.readFileSync(filePath, "utf-8"));
+}
+
+export default async function HomePage() {
+  const products = await loadProducts();
 
   return (
     <div>

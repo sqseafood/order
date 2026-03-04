@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
+import { put } from "@vercel/blob";
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,11 +18,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const filePath = path.join(process.cwd(), "data", "products.json");
-    fs.writeFileSync(filePath, JSON.stringify(products, null, 2), "utf-8");
+    await put("products.json", JSON.stringify(products, null, 2), {
+      access: "public",
+      contentType: "application/json",
+      addRandomSuffix: false,
+      allowOverwrite: true,
+    });
 
     return NextResponse.json({ success: true, count: products.length });
-  } catch {
+  } catch (err) {
+    console.error("Products write error:", err);
     return NextResponse.json({ error: "Server error writing products." }, { status: 500 });
   }
 }

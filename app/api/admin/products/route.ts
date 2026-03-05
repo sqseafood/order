@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
               from: `"SeaQuest" <${process.env.SMTP_USER}>`,
               to: entry.email,
               subject: `${entry.productName} is back in stock!`,
-              text: `Good news! ${entry.productName} (Item# ${entry.productId}) is now available again.\n\nVisit our order page to place your order.\n\n— SeaQuest`,
+              text: `Good news! ${entry.productName} (Item# ${entry.productId}) is now available again.\n\nVisit our order page to place your order. Same-day pickup only — 12:00 PM to 4:00 PM Pacific.\n\n— SeaQuest`,
             })
           )
         );

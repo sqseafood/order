@@ -74,17 +74,36 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing customer info." }, { status: 400 });
     }
 
+    // Reject orders after 4:00 PM Pacific time
+    const pacificHour = parseInt(
+      new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles", hour: "numeric", hour12: false })
+    );
+    if (pacificHour >= 16) {
+      return NextResponse.json(
+        { error: "Ordering is closed for today. Pickup hours are 12:00 PM – 4:00 PM Pacific. Please come back tomorrow." },
+        { status: 400 }
+      );
+    }
+
     const pickupNumber = await nextPickupNumber();
 
     const itemRows = items.map((i) =>
       `  Item# ${i.product.id} • ${i.product.name}  Qty: ${i.quantity}  =  $${(i.product.price * i.quantity).toFixed(2)}`
     ).join("\n");
 
-    const dateStr = new Date().toLocaleString("en-US", { timeZone: "America/New_York" });
+    const dateStr = new Date().toLocaleString("en-US", {
+      timeZone: "America/Los_Angeles",
+      weekday: "long", year: "numeric", month: "long", day: "numeric",
+      hour: "numeric", minute: "2-digit", timeZoneName: "short",
+    });
+    const pickupDate = new Date().toLocaleDateString("en-US", {
+      timeZone: "America/Los_Angeles", weekday: "long", month: "long", day: "numeric",
+    });
 
     const body = `
 New Order — ${dateStr}
 Pickup #: ${pickupNumber}
+Pickup Date: ${pickupDate} (TODAY, by 4:00 PM)
 
 Customer
 --------
@@ -119,7 +138,7 @@ Order Total: $${total.toFixed(2)}
       from: `"SeaQuest" <${process.env.SMTP_USER}>`,
       to: customer.email,
       subject: `Your SeaQuest Order Confirmation — Pickup #${pickupNumber}`,
-      text: `Thank you, ${customer.name}! Your order has been received.\n\nYour pickup number is: ${pickupNumber}\n\n${body}\n\nWe will be in touch shortly.`,
+      text: `Thank you, ${customer.name}! Your order has been received.\n\nYour pickup number is: ${pickupNumber}\nPickup: TODAY (${pickupDate}), 12:00 PM – 4:00 PM\nLocation: SeaQuest Seafood\n\n${body}\n\nPlease note: this is a same-day pickup order only.`,
     });
 
     // Save customer to database (non-blocking)

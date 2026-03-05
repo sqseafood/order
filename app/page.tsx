@@ -26,9 +26,17 @@ export default async function HomePage() {
 
   return (
     <div>
-      <div className="mb-5">
+      <div className="mb-4">
         <h1 className="text-2xl font-bold text-gray-900">Menu</h1>
-        <p className="text-gray-500 text-sm mt-0.5">Order fresh, delivered fast</p>
+      </div>
+
+      {/* Same-day pickup notice */}
+      <div className="flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-2xl px-4 py-3 mb-5 text-sm">
+        <span className="text-lg">🕐</span>
+        <div>
+          <span className="font-semibold text-orange-800">Same-day pickup only</span>
+          <span className="text-orange-600"> · Pickup 12:00 PM – 4:00 PM · Order must be placed the same day</span>
+        </div>
       </div>
       <ProductBrowser products={products} />
     </div>

@@ -4,10 +4,19 @@ import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useCart } from "@/context/CartContext";
-import { TrashIcon, MinusIcon, PlusIcon, ShoppingBagIcon, CheckCircleIcon } from "@heroicons/react/24/outline";
+import { TrashIcon, MinusIcon, PlusIcon, ShoppingBagIcon, CheckCircleIcon, ClockIcon } from "@heroicons/react/24/outline";
+
+function getPacificInfo() {
+  const tz = "America/Los_Angeles";
+  const now = new Date();
+  const hour = parseInt(now.toLocaleString("en-US", { timeZone: tz, hour: "numeric", hour12: false }));
+  const todayStr = now.toLocaleDateString("en-US", { timeZone: tz, weekday: "long", month: "long", day: "numeric" });
+  return { hour, todayStr, isOpen: hour < 16 };
+}
 
 export default function CartPage() {
   const { items, removeItem, updateQuantity, clearCart, totalItems, totalPrice } = useCart();
+  const { hour, todayStr, isOpen } = getPacificInfo();
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -84,10 +93,32 @@ export default function CartPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold text-gray-900">Your Cart</h1>
         <span className="text-sm text-gray-500">{totalItems} item{totalItems !== 1 ? "s" : ""}</span>
       </div>
+
+      {/* Pickup notice */}
+      {isOpen ? (
+        <div className="flex items-center gap-2.5 bg-green-50 border border-green-200 rounded-2xl px-4 py-3 mb-5">
+          <ClockIcon className="w-5 h-5 text-green-500 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-green-800">Same-day pickup only</p>
+            <p className="text-xs text-green-600">
+              {todayStr} · Pickup 12:00 PM – 4:00 PM
+              {hour < 12 ? " · Order now, pickup starts at noon" : ""}
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2.5 bg-red-50 border border-red-200 rounded-2xl px-4 py-3 mb-5">
+          <ClockIcon className="w-5 h-5 text-red-400 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-red-800">Ordering closed for today</p>
+            <p className="text-xs text-red-600">Pickup hours are 12:00 PM – 4:00 PM. Come back tomorrow!</p>
+          </div>
+        </div>
+      )}
 
       {/* Cart items */}
       <div className="space-y-3 mb-6">
@@ -185,10 +216,10 @@ export default function CartPage() {
 
       <button
         onClick={handlePlaceOrder}
-        disabled={submitting}
-        className="w-full bg-orange-500 hover:bg-orange-600 active:scale-[0.98] disabled:opacity-50 text-white font-bold py-4 rounded-2xl text-base transition-all shadow-lg shadow-orange-200"
+        disabled={submitting || !isOpen}
+        className="w-full bg-orange-500 hover:bg-orange-600 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl text-base transition-all shadow-lg shadow-orange-200"
       >
-        {submitting ? "Placing Order…" : `Place Order — $${totalPrice.toFixed(2)}`}
+        {submitting ? "Placing Order…" : !isOpen ? "Ordering Closed for Today" : `Place Order — $${totalPrice.toFixed(2)}`}
       </button>
 
       <button onClick={clearCart} className="w-full mt-3 text-gray-400 hover:text-red-400 text-sm py-2 transition-colors">

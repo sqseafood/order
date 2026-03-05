@@ -160,7 +160,7 @@ export function mergeMAS200WithProducts(existing: Product[]): Product[] | null {
         ...known,
         price:     mas.price     ?? known.price,
         unitPrice: mas.unitPrice ?? known.unitPrice,
-        category:  mas.category  && mas.category !== "UNCATEGORIZED" ? mas.category : known.category,
+        // PRN has no real category — always keep the existing one
         oos:       false,
       });
     } else {

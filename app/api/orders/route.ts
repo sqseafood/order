@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     const pickupNumber = Math.floor(100 + Math.random() * 900).toString();
 
     const itemRows = items.map((i) =>
-      `  • ${i.product.name} (${i.product.id})  ×${i.quantity}  =  $${(i.product.price * i.quantity).toFixed(2)}`
+      `  Item# ${i.product.id} • ${i.product.name}  Qty: ${i.quantity}  =  $${(i.product.price * i.quantity).toFixed(2)}`
     ).join("\n");
 
     const dateStr = new Date().toLocaleString("en-US", { timeZone: "America/New_York" });

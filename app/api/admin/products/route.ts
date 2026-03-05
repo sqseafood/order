@@ -138,3 +138,22 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Server error updating categories." }, { status: 500 });
   }
 }
+
+// DELETE /api/admin/products — remove a single product by id
+export async function DELETE(req: NextRequest) {
+  try {
+    const { id } = await req.json();
+    if (!id) return NextResponse.json({ error: "Product ID required." }, { status: 400 });
+
+    const { products, fromBlob } = await loadCurrentProducts();
+    const filtered = products.filter((p: Product) => p.id !== id);
+    if (filtered.length === products.length) {
+      return NextResponse.json({ error: "Product not found." }, { status: 404 });
+    }
+    await saveProducts(filtered, fromBlob);
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error("Products DELETE error:", err);
+    return NextResponse.json({ error: "Server error deleting product." }, { status: 500 });
+  }
+}

@@ -325,7 +325,7 @@ export default function AdminPage() {
 
   const categories = preview ? Array.from(new Set(preview.map((p) => p.category))) : [];
 
-  const [tab, setTab] = useState<"products" | "catalog" | "customers" | "notifications">("products");
+  const [tab, setTab] = useState<"products" | "catalog" | "items" | "customers" | "notifications">("products");
 
   // ── Catalog tab state ──────────────────────────────────────────────────────
   const [catalogItems, setCatalogItems] = useState<Product[] | null>(null);
@@ -387,6 +387,50 @@ export default function AdminPage() {
       setCatalogStatus({ type: "error", message: (err as Error).message });
     } finally {
       setCatalogSaving(false);
+    }
+  }
+
+  // ── Items tab state ────────────────────────────────────────────────────────
+  const [allItems, setAllItems] = useState<Product[] | null>(null);
+  const [itemsLoading, setItemsLoading] = useState(false);
+  const [itemsError, setItemsError] = useState<string | null>(null);
+  const [itemsSearch, setItemsSearch] = useState("");
+  const [itemsFilter, setItemsFilter] = useState<"all" | "oos">("all");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  async function loadItems() {
+    setItemsLoading(true);
+    setItemsError(null);
+    try {
+      const res = await fetch(`/api/products?t=${Date.now()}`);
+      if (!res.ok) throw new Error("Failed to load.");
+      setAllItems(await res.json());
+    } catch (err) {
+      setItemsError((err as Error).message);
+    } finally {
+      setItemsLoading(false);
+    }
+  }
+
+  async function deleteItem(id: string) {
+    setDeletingId(id);
+    try {
+      const res = await fetch("/api/admin/products", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Delete failed.");
+      }
+      setAllItems((prev) => prev ? prev.filter((p) => p.id !== id) : prev);
+    } catch (err) {
+      setItemsError((err as Error).message);
+    } finally {
+      setDeletingId(null);
+      setConfirmDeleteId(null);
     }
   }
 
@@ -452,7 +496,7 @@ export default function AdminPage() {
 
       {/* Tab nav */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl mb-6">
-        {(["products", "catalog", "customers", "notifications"] as const).map((t) => (
+        {(["products", "catalog", "items", "customers", "notifications"] as const).map((t) => (
           <button
             key={t}
             onClick={() => {
@@ -460,12 +504,13 @@ export default function AdminPage() {
               if (t === "customers" && !customers) loadCustomers();
               if (t === "notifications" && !waitlist) loadWaitlist();
               if (t === "catalog" && !catalogItems) loadCatalog();
+              if (t === "items" && !allItems) loadItems();
             }}
-            className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${
+            className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
               tab === t ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
             }`}
           >
-            {t === "products" ? "Products"
+            {t === "products" ? "Upload"
               : t === "catalog" ? (
                 <span className="relative">
                   Catalog
@@ -476,6 +521,7 @@ export default function AdminPage() {
                   )}
                 </span>
               )
+              : t === "items" ? "Items"
               : t === "customers" ? "Customers"
               : "Notify"}
           </button>
@@ -719,6 +765,135 @@ export default function AdminPage() {
                   {catalogStatus.message}
                 </div>
               )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Items tab — search and remove products */}
+      {tab === "items" && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm text-gray-500">Search and remove discontinued items.</p>
+            <button
+              onClick={loadItems}
+              disabled={itemsLoading}
+              className="text-xs text-gray-500 hover:text-gray-700 border border-gray-200 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {itemsLoading ? "Loading…" : "Refresh"}
+            </button>
+          </div>
+
+          {itemsError && (
+            <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700 mb-4">
+              {itemsError}
+            </div>
+          )}
+
+          {itemsLoading && <div className="text-center py-12 text-gray-400 text-sm">Loading…</div>}
+
+          {!itemsLoading && allItems && (
+            <div>
+              <input
+                type="text"
+                value={itemsSearch}
+                onChange={(e) => { setItemsSearch(e.target.value); setConfirmDeleteId(null); }}
+                placeholder="Search by name or item#…"
+                className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 mb-3 focus:outline-none focus:border-orange-400"
+              />
+
+              {/* Filter */}
+              <div className="flex gap-2 mb-3">
+                {(["all", "oos"] as const).map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => { setItemsFilter(f); setConfirmDeleteId(null); }}
+                    className={`text-xs px-3 py-1 rounded-full font-medium transition-colors ${
+                      itemsFilter === f
+                        ? "bg-orange-500 text-white"
+                        : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                    }`}
+                  >
+                    {f === "all" ? `All (${allItems.length})` : `OOS (${allItems.filter((p) => p.oos).length})`}
+                  </button>
+                ))}
+              </div>
+
+              {(() => {
+                const q = itemsSearch.toLowerCase();
+                const visible = allItems.filter((p) => {
+                  if (itemsFilter === "oos" && !p.oos) return false;
+                  return !q || p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q);
+                });
+
+                if (visible.length === 0) {
+                  return <div className="text-center py-12 text-gray-400 text-sm">No items found.</div>;
+                }
+
+                return (
+                  <div className="rounded-2xl border border-gray-200 overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead className="bg-gray-50 text-gray-500 uppercase tracking-wide">
+                          <tr>
+                            <th className="text-left px-3 py-2.5">Item#</th>
+                            <th className="text-left px-3 py-2.5">Name</th>
+                            <th className="text-left px-3 py-2.5">Category</th>
+                            <th className="px-3 py-2.5"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {visible.map((p) => (
+                            <tr key={p.id} className="bg-white hover:bg-gray-50">
+                              <td className="px-3 py-2.5 font-mono text-gray-500 whitespace-nowrap">
+                                {p.id}
+                              </td>
+                              <td className="px-3 py-2.5 text-gray-900">
+                                <div className="font-medium">{p.name}</div>
+                                {p.oos && (
+                                  <span className="text-[10px] bg-red-100 text-red-600 font-semibold px-1.5 py-0.5 rounded-full">
+                                    OOS
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2.5 text-gray-500">{p.category}</td>
+                              <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                                {confirmDeleteId === p.id ? (
+                                  <div className="flex gap-1 justify-end">
+                                    <button
+                                      onClick={() => deleteItem(p.id)}
+                                      disabled={deletingId === p.id}
+                                      className="text-[11px] bg-red-500 hover:bg-red-600 text-white font-semibold px-2 py-1 rounded-lg disabled:opacity-50"
+                                    >
+                                      {deletingId === p.id ? "…" : "Confirm"}
+                                    </button>
+                                    <button
+                                      onClick={() => setConfirmDeleteId(null)}
+                                      className="text-[11px] text-gray-400 hover:text-gray-600 border border-gray-200 px-2 py-1 rounded-lg"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => setConfirmDeleteId(p.id)}
+                                    className="text-[11px] text-red-400 hover:text-red-600 border border-red-200 hover:border-red-400 px-2 py-1 rounded-lg transition-colors"
+                                  >
+                                    Remove
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="bg-gray-50 px-3 py-2 text-xs text-gray-400 border-t border-gray-100">
+                      {visible.length} of {allItems.length} items shown
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>

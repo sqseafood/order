@@ -2,15 +2,33 @@ import { NextResponse } from "next/server";
 import { list } from "@vercel/blob";
 import fs from "fs";
 import path from "path";
-import { loadMAS200Products, getMAS200LastUpdated } from "@/lib/mas200";
+import { mergeMAS200WithProducts, getMAS200LastUpdated } from "@/lib/mas200";
 
 export const dynamic = "force-dynamic";
 
+async function getBaseProducts() {
+  // Try Vercel Blob first, then local file
+  try {
+    const { blobs } = await list({ prefix: "products.json" });
+    const blob = blobs.find((b) => b.pathname === "products.json");
+    if (blob) {
+      const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
+      return await res.json();
+    }
+  } catch {
+    // fall through
+  }
+  const filePath = path.join(process.cwd(), "data", "products.json");
+  return JSON.parse(fs.readFileSync(filePath, "utf-8"));
+}
+
 export async function GET() {
-  // 1. Try MAS 200 live export first
-  const mas200Products = loadMAS200Products();
-  if (mas200Products) {
-    return NextResponse.json(mas200Products, {
+  const baseProducts = await getBaseProducts();
+
+  // Merge with MAS 200 live export if available
+  const merged = mergeMAS200WithProducts(baseProducts);
+  if (merged) {
+    return NextResponse.json(merged, {
       headers: {
         "X-Data-Source": "MAS200",
         "X-Last-Updated": getMAS200LastUpdated() ?? "",
@@ -18,21 +36,6 @@ export async function GET() {
     });
   }
 
-  // 2. Try Vercel Blob
-  try {
-    const { blobs } = await list({ prefix: "products.json" });
-    const blob = blobs.find((b) => b.pathname === "products.json");
-    if (blob) {
-      const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
-      const products = await res.json();
-      return NextResponse.json(products);
-    }
-  } catch {
-    // fall through to local
-  }
-
-  // 3. Fall back to local products.json
-  const filePath = path.join(process.cwd(), "data", "products.json");
-  const products = JSON.parse(fs.readFileSync(filePath, "utf-8"));
-  return NextResponse.json(products);
+  // No MAS 200 export yet — return base products as-is
+  return NextResponse.json(baseProducts);
 }

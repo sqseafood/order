@@ -125,11 +125,18 @@ export async function PATCH(req: NextRequest) {
     }
 
     const updateMap = new Map(
-      updates.map((u: { id: string; category: string }) => [u.id, u.category])
+      updates.map((u: { id: string; category: string; pack?: string; packType?: string }) => [u.id, u])
     );
-    const updated = products.map((p: Product) =>
-      updateMap.has(p.id) ? { ...p, category: updateMap.get(p.id) ?? p.category } : p
-    );
+    const updated = products.map((p: Product) => {
+      if (!updateMap.has(p.id)) return p;
+      const u = updateMap.get(p.id)!;
+      return {
+        ...p,
+        category: u.category ?? p.category,
+        ...(u.pack !== undefined && u.pack !== "" && { pack: u.pack }),
+        ...(u.packType !== undefined && u.packType !== "" && { packType: u.packType }),
+      };
+    });
 
     await saveProducts(updated, fromBlob);
     return NextResponse.json({ success: true, updated: updates.length });

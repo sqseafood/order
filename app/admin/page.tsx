@@ -334,6 +334,8 @@ export default function AdminPage() {
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [catalogSearch, setCatalogSearch] = useState("");
   const [categoryEdits, setCategoryEdits] = useState<Record<string, string>>({});
+  const [packEdits, setPackEdits] = useState<Record<string, string>>({});
+  const [packTypeEdits, setPackTypeEdits] = useState<Record<string, string>>({});
   const [catalogSaving, setCatalogSaving] = useState(false);
   const [catalogStatus, setCatalogStatus] = useState<Status>(null);
 
@@ -351,8 +353,12 @@ export default function AdminPage() {
       setCatalogItems(newItems);
       setAllCategories(cats);
       const edits: Record<string, string> = {};
-      for (const p of newItems) edits[p.id] = "";
+      const packs: Record<string, string> = {};
+      const packTypes: Record<string, string> = {};
+      for (const p of newItems) { edits[p.id] = ""; packs[p.id] = ""; packTypes[p.id] = ""; }
       setCategoryEdits(edits);
+      setPackEdits(packs);
+      setPackTypeEdits(packTypes);
     } catch (err) {
       setCatalogError((err as Error).message);
     } finally {
@@ -363,7 +369,12 @@ export default function AdminPage() {
   async function saveCategoryEdits() {
     const updates = Object.entries(categoryEdits)
       .filter(([, cat]) => cat.trim() !== "")
-      .map(([id, category]) => ({ id, category: category.trim().toUpperCase() }));
+      .map(([id, category]) => ({
+        id,
+        category: category.trim().toUpperCase(),
+        pack: (packEdits[id] ?? "").trim(),
+        packType: (packTypeEdits[id] ?? "").trim(),
+      }));
     if (!updates.length) {
       setCatalogStatus({ type: "error", message: "Select at least one category before saving." });
       return;
@@ -702,7 +713,9 @@ export default function AdminPage() {
                       <tr>
                         <th className="text-left px-3 py-2.5">Item#</th>
                         <th className="text-left px-3 py-2.5">Name</th>
-                        <th className="text-left px-3 py-2.5 w-40">Category</th>
+                        <th className="text-left px-3 py-2.5 w-36">Category</th>
+                        <th className="text-left px-3 py-2.5 w-24">Pack</th>
+                        <th className="text-left px-3 py-2.5 w-24">Pack Type</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -732,10 +745,38 @@ export default function AdminPage() {
                                 ))}
                               </datalist>
                             </td>
+                            <td className="px-3 py-2">
+                              <input
+                                type="text"
+                                value={packEdits[p.id] ?? ""}
+                                onChange={(e) =>
+                                  setPackEdits((prev) => ({ ...prev, [p.id]: e.target.value }))
+                                }
+                                placeholder="e.g. VP"
+                                className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-orange-400"
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <input
+                                type="text"
+                                list="packtype-list"
+                                value={packTypeEdits[p.id] ?? ""}
+                                onChange={(e) =>
+                                  setPackTypeEdits((prev) => ({ ...prev, [p.id]: e.target.value }))
+                                }
+                                placeholder="e.g. Retail"
+                                className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-orange-400"
+                              />
+                            </td>
                           </tr>
                         ))}
                     </tbody>
                   </table>
+                  <datalist id="packtype-list">
+                    {["Retail", "Bulk", "VP", "IWP", "IVP", "Box", "Tray"].map((v) => (
+                      <option key={v} value={v} />
+                    ))}
+                  </datalist>
                 </div>
                 <div className="bg-gray-50 px-3 py-2 text-xs text-gray-400 border-t border-gray-100">
                   {catalogItems.length} item{catalogItems.length !== 1 ? "s" : ""} need categorizing

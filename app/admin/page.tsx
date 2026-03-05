@@ -6,6 +6,15 @@ import type { Product } from "@/types";
 type ParsedProduct = Product & { image: string };
 type Status = { type: "success" | "error"; message: string } | null;
 
+interface CustomerRecord {
+  name: string;
+  phone: string;
+  email: string;
+  firstOrderAt: string;
+  lastOrderAt: string;
+  orderCount: number;
+}
+
 // ── Case-price formula ────────────────────────────────────────────────────────
 // packaging examples:
 //   "30 X 14 OZ"  → case = N × unitPrice        (price is per bag/pack)
@@ -316,9 +325,64 @@ export default function AdminPage() {
 
   const categories = preview ? Array.from(new Set(preview.map((p) => p.category))) : [];
 
+  const [tab, setTab] = useState<"products" | "customers">("products");
+  const [customers, setCustomers] = useState<CustomerRecord[] | null>(null);
+  const [customersLoading, setCustomersLoading] = useState(false);
+  const [customersError, setCustomersError] = useState<string | null>(null);
+
+  async function loadCustomers() {
+    setCustomersLoading(true);
+    setCustomersError(null);
+    try {
+      const res = await fetch("/api/admin/customers");
+      if (!res.ok) throw new Error("Failed to load.");
+      setCustomers(await res.json());
+    } catch (err) {
+      setCustomersError((err as Error).message);
+    } finally {
+      setCustomersLoading(false);
+    }
+  }
+
+  function exportCSV() {
+    if (!customers?.length) return;
+    const header = "Name,Phone,Email,Orders,First Order,Last Order";
+    const rows = customers.map((c) =>
+      [c.name, c.phone, c.email, c.orderCount,
+        new Date(c.firstOrderAt).toLocaleDateString("en-US"),
+        new Date(c.lastOrderAt).toLocaleDateString("en-US"),
+      ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")
+    );
+    const csv = [header, ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "seaquest-customers.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="max-w-lg mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold text-gray-900 mb-1">Product Manager</h1>
+      <h1 className="text-2xl font-bold text-gray-900 mb-5">Admin</h1>
+
+      {/* Tab nav */}
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl mb-6">
+        {(["products", "customers"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => { setTab(t); if (t === "customers" && !customers) loadCustomers(); }}
+            className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${
+              tab === t ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            {t === "products" ? "Products" : "Customers"}
+          </button>
+        ))}
+      </div>
+
+      {tab === "products" && <>
       <p className="text-sm text-gray-500 mb-6">
         Upload the SeaQuest price list (.txt/.tsv) or a .csv / .json file.
         OOS, NJ, and warehouse duplicates are skipped automatically.
@@ -440,6 +504,87 @@ export default function AdminPage() {
           </div>
         )}
       </div>
+      </>}
+
+      {/* Customers tab */}
+      {tab === "customers" && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm text-gray-500">
+              All customers who have placed an order.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={loadCustomers}
+                disabled={customersLoading}
+                className="text-xs text-gray-500 hover:text-gray-700 border border-gray-200 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {customersLoading ? "Loading…" : "Refresh"}
+              </button>
+              {customers && customers.length > 0 && (
+                <button
+                  onClick={exportCSV}
+                  className="text-xs bg-orange-500 hover:bg-orange-600 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  Export CSV
+                </button>
+              )}
+            </div>
+          </div>
+
+          {customersError && (
+            <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
+              {customersError}
+            </div>
+          )}
+
+          {customersLoading && (
+            <div className="text-center py-12 text-gray-400 text-sm">Loading…</div>
+          )}
+
+          {!customersLoading && customers && customers.length === 0 && (
+            <div className="text-center py-12 text-gray-400 text-sm">No customers yet.</div>
+          )}
+
+          {!customersLoading && customers && customers.length > 0 && (
+            <div className="rounded-2xl border border-gray-200 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50 text-gray-500 uppercase tracking-wide">
+                    <tr>
+                      <th className="text-left px-3 py-2.5">Name</th>
+                      <th className="text-left px-3 py-2.5">Phone</th>
+                      <th className="text-left px-3 py-2.5">Email</th>
+                      <th className="text-center px-3 py-2.5">Orders</th>
+                      <th className="text-left px-3 py-2.5">Last Order</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {customers.map((c, i) => (
+                      <tr key={i} className="bg-white hover:bg-gray-50 transition-colors">
+                        <td className="px-3 py-2.5 font-medium text-gray-900">{c.name}</td>
+                        <td className="px-3 py-2.5 text-gray-600">{c.phone}</td>
+                        <td className="px-3 py-2.5 text-gray-600">{c.email}</td>
+                        <td className="px-3 py-2.5 text-center">
+                          <span className="bg-orange-100 text-orange-700 font-semibold px-2 py-0.5 rounded-full">
+                            {c.orderCount}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-gray-500">
+                          {new Date(c.lastOrderAt).toLocaleDateString("en-US")}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="bg-gray-50 px-3 py-2 text-xs text-gray-400 border-t border-gray-100">
+                {customers.length} customer{customers.length !== 1 ? "s" : ""} total
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

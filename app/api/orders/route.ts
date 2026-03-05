@@ -3,6 +3,50 @@ import nodemailer from "nodemailer";
 import { put, list } from "@vercel/blob";
 import type { CartItem } from "@/types";
 
+export interface StoredOrder {
+  id: string;
+  pickupNumber: string;
+  customer: { name: string; phone: string; email: string };
+  items: CartItem[];
+  total: number;
+  orderedAt: string;
+  status: "new" | "processing" | "done";
+  claimedBy?: string;
+  claimedAt?: string;
+  doneAt?: string;
+}
+
+function getTodayKey(): string {
+  const pacificStr = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
+  const d = new Date(pacificStr);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `orders-${y}-${m}-${day}.json`;
+}
+
+async function loadTodayOrders(): Promise<StoredOrder[]> {
+  try {
+    const key = getTodayKey();
+    const { blobs } = await list({ prefix: key });
+    const blob = blobs.find((b) => b.pathname === key);
+    if (blob) {
+      const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
+      if (res.ok) return await res.json();
+    }
+  } catch {}
+  return [];
+}
+
+async function saveTodayOrders(orders: StoredOrder[]): Promise<void> {
+  await put(getTodayKey(), JSON.stringify(orders, null, 2), {
+    access: "public",
+    contentType: "application/json",
+    addRandomSuffix: false,
+    allowOverwrite: true,
+  });
+}
+
 interface CustomerRecord {
   name: string;
   phone: string;
@@ -141,6 +185,20 @@ Order Total: $${total.toFixed(2)}
       text: `Thank you, ${customer.name}! Your order has been received.\n\nYour pickup number is: ${pickupNumber}\nPickup: TODAY (${pickupDate}), 12:00 PM – 4:00 PM\nLocation: SeaQuest Seafood\n\n${body}\n\nPlease note: this is a same-day pickup order only.`,
     });
 
+    // Save order to today's order list (non-blocking)
+    loadTodayOrders().then((orders) => {
+      orders.push({
+        id: pickupNumber,
+        pickupNumber,
+        customer,
+        items,
+        total,
+        orderedAt: new Date().toISOString(),
+        status: "new",
+      });
+      return saveTodayOrders(orders);
+    }).catch(console.error);
+
     // Save customer to database (non-blocking)
     saveCustomer(customer);
 
@@ -150,4 +208,9 @@ Order Total: $${total.toFixed(2)}
     console.error("Order error:", msg);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
+}
+
+export async function GET() {
+  const orders = await loadTodayOrders();
+  return NextResponse.json(orders);
 }

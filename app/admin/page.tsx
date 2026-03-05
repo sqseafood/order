@@ -325,10 +325,29 @@ export default function AdminPage() {
 
   const categories = preview ? Array.from(new Set(preview.map((p) => p.category))) : [];
 
-  const [tab, setTab] = useState<"products" | "customers">("products");
+  const [tab, setTab] = useState<"products" | "customers" | "notifications">("products");
   const [customers, setCustomers] = useState<CustomerRecord[] | null>(null);
   const [customersLoading, setCustomersLoading] = useState(false);
   const [customersError, setCustomersError] = useState<string | null>(null);
+
+  interface WaitlistEntry { productId: string; productName: string; email: string; signedUpAt: string; }
+  const [waitlist, setWaitlist] = useState<WaitlistEntry[] | null>(null);
+  const [waitlistLoading, setWaitlistLoading] = useState(false);
+  const [waitlistError, setWaitlistError] = useState<string | null>(null);
+
+  async function loadWaitlist() {
+    setWaitlistLoading(true);
+    setWaitlistError(null);
+    try {
+      const res = await fetch("/api/notify-me");
+      if (!res.ok) throw new Error("Failed to load.");
+      setWaitlist(await res.json());
+    } catch (err) {
+      setWaitlistError((err as Error).message);
+    } finally {
+      setWaitlistLoading(false);
+    }
+  }
 
   async function loadCustomers() {
     setCustomersLoading(true);
@@ -369,15 +388,19 @@ export default function AdminPage() {
 
       {/* Tab nav */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl mb-6">
-        {(["products", "customers"] as const).map((t) => (
+        {(["products", "customers", "notifications"] as const).map((t) => (
           <button
             key={t}
-            onClick={() => { setTab(t); if (t === "customers" && !customers) loadCustomers(); }}
+            onClick={() => {
+              setTab(t);
+              if (t === "customers" && !customers) loadCustomers();
+              if (t === "notifications" && !waitlist) loadWaitlist();
+            }}
             className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${
               tab === t ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
             }`}
           >
-            {t === "products" ? "Products" : "Customers"}
+            {t === "products" ? "Products" : t === "customers" ? "Customers" : "Notify"}
           </button>
         ))}
       </div>
@@ -580,6 +603,68 @@ export default function AdminPage() {
               </div>
               <div className="bg-gray-50 px-3 py-2 text-xs text-gray-400 border-t border-gray-100">
                 {customers.length} customer{customers.length !== 1 ? "s" : ""} total
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {/* Notifications tab */}
+      {tab === "notifications" && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm text-gray-500">Customers waiting for OOS items to restock.</p>
+            <button
+              onClick={loadWaitlist}
+              disabled={waitlistLoading}
+              className="text-xs text-gray-500 hover:text-gray-700 border border-gray-200 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {waitlistLoading ? "Loading…" : "Refresh"}
+            </button>
+          </div>
+
+          {waitlistError && (
+            <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
+              {waitlistError}
+            </div>
+          )}
+
+          {waitlistLoading && (
+            <div className="text-center py-12 text-gray-400 text-sm">Loading…</div>
+          )}
+
+          {!waitlistLoading && waitlist && waitlist.length === 0 && (
+            <div className="text-center py-12 text-gray-400 text-sm">No notifications signed up yet.</div>
+          )}
+
+          {!waitlistLoading && waitlist && waitlist.length > 0 && (
+            <div className="rounded-2xl border border-gray-200 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50 text-gray-500 uppercase tracking-wide">
+                    <tr>
+                      <th className="text-left px-3 py-2.5">Product</th>
+                      <th className="text-left px-3 py-2.5">Email</th>
+                      <th className="text-left px-3 py-2.5">Signed Up</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {waitlist.map((w, i) => (
+                      <tr key={i} className="bg-white hover:bg-gray-50 transition-colors">
+                        <td className="px-3 py-2.5">
+                          <div className="font-medium text-gray-900 truncate max-w-[160px]">{w.productName}</div>
+                          <div className="text-gray-400 font-mono">{w.productId}</div>
+                        </td>
+                        <td className="px-3 py-2.5 text-gray-600">{w.email}</td>
+                        <td className="px-3 py-2.5 text-gray-500">
+                          {new Date(w.signedUpAt).toLocaleDateString("en-US")}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="bg-gray-50 px-3 py-2 text-xs text-gray-400 border-t border-gray-100">
+                {waitlist.length} notification{waitlist.length !== 1 ? "s" : ""} total
               </div>
             </div>
           )}

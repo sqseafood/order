@@ -30,6 +30,11 @@ export async function writeWaitlist(entries: WaitlistEntry[]) {
   });
 }
 
+export async function GET() {
+  const waitlist = await readWaitlist();
+  return NextResponse.json(waitlist);
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { productId, productName, email } = await req.json();

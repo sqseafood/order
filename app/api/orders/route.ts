@@ -1,6 +1,46 @@
 import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
+import { put, list } from "@vercel/blob";
 import type { CartItem } from "@/types";
+
+interface CustomerRecord {
+  name: string;
+  phone: string;
+  email: string;
+  firstOrderAt: string;
+  lastOrderAt: string;
+  orderCount: number;
+}
+
+async function saveCustomer(customer: { name: string; phone: string; email: string }) {
+  try {
+    let records: CustomerRecord[] = [];
+    const { blobs } = await list({ prefix: "customers.json" });
+    const blob = blobs.find((b) => b.pathname === "customers.json");
+    if (blob) {
+      const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
+      if (res.ok) records = await res.json();
+    }
+    const now = new Date().toISOString();
+    const existing = records.find((r) => r.email.toLowerCase() === customer.email.toLowerCase());
+    if (existing) {
+      existing.lastOrderAt = now;
+      existing.orderCount += 1;
+      existing.name = customer.name;
+      existing.phone = customer.phone;
+    } else {
+      records.push({ ...customer, firstOrderAt: now, lastOrderAt: now, orderCount: 1 });
+    }
+    await put("customers.json", JSON.stringify(records, null, 2), {
+      access: "public",
+      contentType: "application/json",
+      addRandomSuffix: false,
+      allowOverwrite: true,
+    });
+  } catch (err) {
+    console.error("Failed to save customer:", err);
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -61,6 +101,9 @@ Order Total: $${total.toFixed(2)}
       subject: `Your SeaQuest Order Confirmation — Pickup #${pickupNumber}`,
       text: `Thank you, ${customer.name}! Your order has been received.\n\nYour pickup number is: ${pickupNumber}\n\n${body}\n\nWe will be in touch shortly.`,
     });
+
+    // Save customer to database (non-blocking)
+    saveCustomer(customer);
 
     return NextResponse.json({ success: true, pickupNumber });
   } catch (err) {

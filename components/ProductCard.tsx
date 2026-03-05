@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 import { useCart } from "@/context/CartContext";
 import type { Product } from "@/types";
@@ -9,6 +10,26 @@ export default function ProductCard({ product }: { product: Product }) {
   const { items, addItem, updateQuantity } = useCart();
   const cartItem = items.find((i) => i.product.id === product.id);
   const qty = cartItem?.quantity ?? 0;
+
+  const [notifyOpen, setNotifyOpen] = useState(false);
+  const [notifyEmail, setNotifyEmail] = useState("");
+  const [notifyStatus, setNotifyStatus] = useState<"idle" | "submitting" | "done" | "error">("idle");
+
+  async function handleNotifyMe() {
+    if (!notifyEmail.trim()) return;
+    setNotifyStatus("submitting");
+    try {
+      const res = await fetch("/api/notify-me", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId: product.id, productName: product.name, email: notifyEmail }),
+      });
+      if (!res.ok) throw new Error();
+      setNotifyStatus("done");
+    } catch {
+      setNotifyStatus("error");
+    }
+  }
 
   return (
     <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100 flex flex-col">
@@ -100,7 +121,41 @@ export default function ProductCard({ product }: { product: Product }) {
           </div>
 
           {product.oos ? (
-            <span className="text-xs text-red-400 font-medium">Out of Stock</span>
+            <div className="flex flex-col items-end gap-1">
+              {notifyStatus === "done" ? (
+                <span className="text-xs text-green-600 font-medium">We&apos;ll notify you!</span>
+              ) : notifyOpen ? (
+                <>
+                  <div className="flex gap-1">
+                    <input
+                      type="email"
+                      value={notifyEmail}
+                      onChange={(e) => setNotifyEmail(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && handleNotifyMe()}
+                      placeholder="your@email.com"
+                      className="text-xs border border-gray-200 rounded-lg px-2 py-1 w-32 focus:outline-none focus:ring-1 focus:ring-orange-300"
+                    />
+                    <button
+                      onClick={handleNotifyMe}
+                      disabled={notifyStatus === "submitting"}
+                      className="text-xs bg-orange-500 hover:bg-orange-600 text-white px-2 py-1 rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      {notifyStatus === "submitting" ? "…" : "OK"}
+                    </button>
+                  </div>
+                  {notifyStatus === "error" && (
+                    <span className="text-xs text-red-500">Try again</span>
+                  )}
+                </>
+              ) : (
+                <button
+                  onClick={() => setNotifyOpen(true)}
+                  className="text-xs text-orange-500 hover:text-orange-600 font-medium underline transition-colors"
+                >
+                  Notify Me
+                </button>
+              )}
+            </div>
           ) : qty === 0 ? (
             <button
               onClick={() => addItem(product)}

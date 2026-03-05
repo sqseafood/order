@@ -406,8 +406,7 @@ export default function AdminPage() {
   const [itemsLoading, setItemsLoading] = useState(false);
   const [itemsError, setItemsError] = useState<string | null>(null);
   const [itemsSearch, setItemsSearch] = useState("");
-  const [itemsFilter, setItemsFilter] = useState<"all" | "oos">("all");
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function loadItems() {
@@ -815,7 +814,7 @@ export default function AdminPage() {
       {tab === "items" && (
         <div>
           <div className="flex items-center justify-between mb-4">
-            <p className="text-sm text-gray-500">Search and remove discontinued items.</p>
+            <p className="text-sm text-gray-500">Out-of-stock items. Remove discontinued ones permanently.</p>
             <button
               onClick={loadItems}
               disabled={itemsLoading}
@@ -843,27 +842,10 @@ export default function AdminPage() {
                 className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 mb-3 focus:outline-none focus:border-orange-400"
               />
 
-              {/* Filter */}
-              <div className="flex gap-2 mb-3">
-                {(["all", "oos"] as const).map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => { setItemsFilter(f); setConfirmDeleteId(null); }}
-                    className={`text-xs px-3 py-1 rounded-full font-medium transition-colors ${
-                      itemsFilter === f
-                        ? "bg-orange-500 text-white"
-                        : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                    }`}
-                  >
-                    {f === "all" ? `All (${allItems.length})` : `OOS (${allItems.filter((p) => p.oos).length})`}
-                  </button>
-                ))}
-              </div>
-
               {(() => {
                 const q = itemsSearch.toLowerCase();
                 const visible = allItems.filter((p) => {
-                  if (itemsFilter === "oos" && !p.oos) return false;
+                  if (!p.oos) return false;
                   return !q || p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q);
                 });
 
@@ -930,7 +912,7 @@ export default function AdminPage() {
                       </table>
                     </div>
                     <div className="bg-gray-50 px-3 py-2 text-xs text-gray-400 border-t border-gray-100">
-                      {visible.length} of {allItems.length} items shown
+                      {visible.length} OOS item{visible.length !== 1 ? "s" : ""}
                     </div>
                   </div>
                 );

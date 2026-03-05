@@ -1,8 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
 import { put, list } from "@vercel/blob";
 import nodemailer from "nodemailer";
+import fs from "fs";
+import path from "path";
 import { readWaitlist, writeWaitlist } from "@/app/api/notify-me/route";
 import type { Product } from "@/types";
+
+async function loadCurrentProducts(): Promise<{ products: Product[]; fromBlob: boolean }> {
+  try {
+    const { blobs } = await list({ prefix: "products.json" });
+    const blob = blobs.find((b) => b.pathname === "products.json");
+    if (blob) {
+      const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
+      if (res.ok) return { products: await res.json(), fromBlob: true };
+    }
+  } catch {}
+  const localPath = path.join(process.cwd(), "data", "products.json");
+  if (fs.existsSync(localPath)) {
+    return { products: JSON.parse(fs.readFileSync(localPath, "utf-8")), fromBlob: false };
+  }
+  return { products: [], fromBlob: false };
+}
+
+async function saveProducts(products: Product[], useBlob: boolean) {
+  const json = JSON.stringify(products, null, 2);
+  if (useBlob || process.env.BLOB_READ_WRITE_TOKEN) {
+    await put("products.json", json, {
+      access: "public",
+      contentType: "application/json",
+      addRandomSuffix: false,
+      allowOverwrite: true,
+    });
+  } else {
+    fs.writeFileSync(path.join(process.cwd(), "data", "products.json"), json, "utf-8");
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -76,5 +108,33 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error("Products write error:", err);
     return NextResponse.json({ error: "Server error writing products." }, { status: 500 });
+  }
+}
+
+// PATCH /api/admin/products — update categories for specific products
+export async function PATCH(req: NextRequest) {
+  try {
+    const { updates } = await req.json(); // [{ id, category }]
+    if (!Array.isArray(updates) || !updates.length) {
+      return NextResponse.json({ error: "Expected a non-empty updates array." }, { status: 400 });
+    }
+
+    const { products, fromBlob } = await loadCurrentProducts();
+    if (!products.length) {
+      return NextResponse.json({ error: "No products found to update." }, { status: 404 });
+    }
+
+    const updateMap = new Map(
+      updates.map((u: { id: string; category: string }) => [u.id, u.category])
+    );
+    const updated = products.map((p: Product) =>
+      updateMap.has(p.id) ? { ...p, category: updateMap.get(p.id) ?? p.category } : p
+    );
+
+    await saveProducts(updated, fromBlob);
+    return NextResponse.json({ success: true, updated: updates.length });
+  } catch (err) {
+    console.error("Products PATCH error:", err);
+    return NextResponse.json({ error: "Server error updating categories." }, { status: 500 });
   }
 }

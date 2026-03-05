@@ -325,7 +325,71 @@ export default function AdminPage() {
 
   const categories = preview ? Array.from(new Set(preview.map((p) => p.category))) : [];
 
-  const [tab, setTab] = useState<"products" | "customers" | "notifications">("products");
+  const [tab, setTab] = useState<"products" | "catalog" | "customers" | "notifications">("products");
+
+  // ── Catalog tab state ──────────────────────────────────────────────────────
+  const [catalogItems, setCatalogItems] = useState<Product[] | null>(null);
+  const [allCategories, setAllCategories] = useState<string[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [categoryEdits, setCategoryEdits] = useState<Record<string, string>>({});
+  const [catalogSaving, setCatalogSaving] = useState(false);
+  const [catalogStatus, setCatalogStatus] = useState<Status>(null);
+
+  async function loadCatalog() {
+    setCatalogLoading(true);
+    setCatalogError(null);
+    try {
+      const res = await fetch(`/api/products?t=${Date.now()}`);
+      if (!res.ok) throw new Error("Failed to load products.");
+      const all: Product[] = await res.json();
+      const newItems = all.filter((p) => p.category === "SEAFOOD");
+      const cats = Array.from(
+        new Set(all.filter((p) => p.category !== "SEAFOOD").map((p) => p.category))
+      ).sort();
+      setCatalogItems(newItems);
+      setAllCategories(cats);
+      const edits: Record<string, string> = {};
+      for (const p of newItems) edits[p.id] = "";
+      setCategoryEdits(edits);
+    } catch (err) {
+      setCatalogError((err as Error).message);
+    } finally {
+      setCatalogLoading(false);
+    }
+  }
+
+  async function saveCategoryEdits() {
+    const updates = Object.entries(categoryEdits)
+      .filter(([, cat]) => cat.trim() !== "")
+      .map(([id, category]) => ({ id, category: category.trim().toUpperCase() }));
+    if (!updates.length) {
+      setCatalogStatus({ type: "error", message: "Select at least one category before saving." });
+      return;
+    }
+    setCatalogSaving(true);
+    setCatalogStatus(null);
+    try {
+      const res = await fetch("/api/admin/products", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ updates }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Save failed.");
+      setCatalogStatus({
+        type: "success",
+        message: `✓ ${data.updated} item${data.updated !== 1 ? "s" : ""} categorized.`,
+      });
+      await loadCatalog();
+    } catch (err) {
+      setCatalogStatus({ type: "error", message: (err as Error).message });
+    } finally {
+      setCatalogSaving(false);
+    }
+  }
+
   const [customers, setCustomers] = useState<CustomerRecord[] | null>(null);
   const [customersLoading, setCustomersLoading] = useState(false);
   const [customersError, setCustomersError] = useState<string | null>(null);
@@ -388,19 +452,32 @@ export default function AdminPage() {
 
       {/* Tab nav */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl mb-6">
-        {(["products", "customers", "notifications"] as const).map((t) => (
+        {(["products", "catalog", "customers", "notifications"] as const).map((t) => (
           <button
             key={t}
             onClick={() => {
               setTab(t);
               if (t === "customers" && !customers) loadCustomers();
               if (t === "notifications" && !waitlist) loadWaitlist();
+              if (t === "catalog" && !catalogItems) loadCatalog();
             }}
             className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${
               tab === t ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
             }`}
           >
-            {t === "products" ? "Products" : t === "customers" ? "Customers" : "Notify"}
+            {t === "products" ? "Products"
+              : t === "catalog" ? (
+                <span className="relative">
+                  Catalog
+                  {catalogItems && catalogItems.length > 0 && (
+                    <span className="ml-1 bg-orange-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                      {catalogItems.length}
+                    </span>
+                  )}
+                </span>
+              )
+              : t === "customers" ? "Customers"
+              : "Notify"}
           </button>
         ))}
       </div>
@@ -528,6 +605,124 @@ export default function AdminPage() {
         )}
       </div>
       </>}
+
+      {/* Catalog tab — assign categories to new MAS 200 items */}
+      {tab === "catalog" && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm text-gray-500">
+              New items from MAS 200 that need a category assigned.
+            </p>
+            <button
+              onClick={loadCatalog}
+              disabled={catalogLoading}
+              className="text-xs text-gray-500 hover:text-gray-700 border border-gray-200 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {catalogLoading ? "Loading…" : "Refresh"}
+            </button>
+          </div>
+
+          {catalogError && (
+            <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700 mb-4">
+              {catalogError}
+            </div>
+          )}
+
+          {catalogLoading && (
+            <div className="text-center py-12 text-gray-400 text-sm">Loading…</div>
+          )}
+
+          {!catalogLoading && catalogItems && catalogItems.length === 0 && (
+            <div className="text-center py-12 text-gray-400 text-sm">
+              All products have categories assigned.
+            </div>
+          )}
+
+          {!catalogLoading && catalogItems && catalogItems.length > 0 && (
+            <div>
+              {/* Search */}
+              <input
+                type="text"
+                value={catalogSearch}
+                onChange={(e) => setCatalogSearch(e.target.value)}
+                placeholder="Search by name or item#…"
+                className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 mb-3 focus:outline-none focus:border-orange-400"
+              />
+
+              <div className="rounded-2xl border border-gray-200 overflow-hidden mb-4">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50 text-gray-500 uppercase tracking-wide">
+                      <tr>
+                        <th className="text-left px-3 py-2.5">Item#</th>
+                        <th className="text-left px-3 py-2.5">Name</th>
+                        <th className="text-left px-3 py-2.5 w-40">Category</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {catalogItems
+                        .filter((p) => {
+                          const q = catalogSearch.toLowerCase();
+                          return !q || p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q);
+                        })
+                        .map((p) => (
+                          <tr key={p.id} className="bg-white hover:bg-gray-50">
+                            <td className="px-3 py-2.5 font-mono text-gray-500 whitespace-nowrap">{p.id}</td>
+                            <td className="px-3 py-2.5 font-medium text-gray-900">{p.name}</td>
+                            <td className="px-3 py-2">
+                              <input
+                                type="text"
+                                list={`cat-${p.id}`}
+                                value={categoryEdits[p.id] ?? ""}
+                                onChange={(e) =>
+                                  setCategoryEdits((prev) => ({ ...prev, [p.id]: e.target.value }))
+                                }
+                                placeholder="Pick or type…"
+                                className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-orange-400"
+                              />
+                              <datalist id={`cat-${p.id}`}>
+                                {allCategories.map((c) => (
+                                  <option key={c} value={c} />
+                                ))}
+                              </datalist>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="bg-gray-50 px-3 py-2 text-xs text-gray-400 border-t border-gray-100">
+                  {catalogItems.length} item{catalogItems.length !== 1 ? "s" : ""} need categorizing
+                  {" · "}
+                  {Object.values(categoryEdits).filter((v) => v.trim()).length} assigned
+                </div>
+              </div>
+
+              <button
+                onClick={saveCategoryEdits}
+                disabled={catalogSaving}
+                className="w-full bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl transition-colors"
+              >
+                {catalogSaving
+                  ? "Saving…"
+                  : `Save Categories (${Object.values(categoryEdits).filter((v) => v.trim()).length} assigned)`}
+              </button>
+
+              {catalogStatus && (
+                <div
+                  className={`mt-4 p-3 rounded-xl text-sm font-medium ${
+                    catalogStatus.type === "success"
+                      ? "bg-green-50 border border-green-200 text-green-700"
+                      : "bg-red-50 border border-red-200 text-red-700"
+                  }`}
+                >
+                  {catalogStatus.message}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Customers tab */}
       {tab === "customers" && (

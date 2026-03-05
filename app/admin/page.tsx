@@ -500,9 +500,22 @@ const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
     URL.revokeObjectURL(url);
   }
 
+  async function handleLogout() {
+    await fetch("/api/admin/auth", { method: "DELETE" });
+    window.location.href = "/admin/login";
+  }
+
   return (
     <div className="max-w-lg mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold text-gray-900 mb-5">Admin</h1>
+      <div className="flex items-center justify-between mb-5">
+        <h1 className="text-2xl font-bold text-gray-900">Admin</h1>
+        <button
+          onClick={handleLogout}
+          className="text-xs text-gray-400 hover:text-gray-600 border border-gray-200 px-3 py-1.5 rounded-lg transition-colors"
+        >
+          Sign out
+        </button>
+      </div>
 
       {/* Tab nav */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl mb-6">

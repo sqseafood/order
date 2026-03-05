@@ -12,6 +12,26 @@ interface CustomerRecord {
   orderCount: number;
 }
 
+async function nextPickupNumber(): Promise<string> {
+  const { blobs } = await list({ prefix: "pickup-counter.json" });
+  const blob = blobs.find((b) => b.pathname === "pickup-counter.json");
+  let counter = 10001;
+  if (blob) {
+    const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
+    if (res.ok) {
+      const data = await res.json();
+      counter = (data.counter ?? 10000) + 1;
+    }
+  }
+  await put("pickup-counter.json", JSON.stringify({ counter }), {
+    access: "public",
+    contentType: "application/json",
+    addRandomSuffix: false,
+    allowOverwrite: true,
+  });
+  return counter.toString();
+}
+
 async function saveCustomer(customer: { name: string; phone: string; email: string }) {
   try {
     let records: CustomerRecord[] = [];
@@ -54,7 +74,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing customer info." }, { status: 400 });
     }
 
-    const pickupNumber = Math.floor(100 + Math.random() * 900).toString();
+    const pickupNumber = await nextPickupNumber();
 
     const itemRows = items.map((i) =>
       `  Item# ${i.product.id} • ${i.product.name}  Qty: ${i.quantity}  =  $${(i.product.price * i.quantity).toFixed(2)}`

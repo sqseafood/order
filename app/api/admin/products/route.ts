@@ -64,7 +64,14 @@ export async function POST(req: NextRequest) {
       }
     } catch {}
 
-    await put("products.json", JSON.stringify(products, null, 2), {
+    // Preserve existing images so they survive price list re-uploads
+    const imageMap = new Map(oldProducts.map((p) => [p.id, p.image]));
+    const productsWithImages = products.map((p: Product) => ({
+      ...p,
+      image: p.image || imageMap.get(p.id) || "",
+    }));
+
+    await put("products.json", JSON.stringify(productsWithImages, null, 2), {
       access: "public",
       contentType: "application/json",
       addRandomSuffix: false,
@@ -73,7 +80,7 @@ export async function POST(req: NextRequest) {
 
     // Send restock notifications for products that were OOS and are now available
     const restockedIds = new Set(
-      products
+      productsWithImages
         .filter((p: Product) => !p.oos && oldProducts.find((op) => op.id === p.id)?.oos === true)
         .map((p: Product) => p.id)
     );

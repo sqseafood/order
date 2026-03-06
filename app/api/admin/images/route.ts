@@ -44,13 +44,12 @@ export async function POST(req: NextRequest) {
       const { url } = await put(`products/${fileName}`, buffer, {
         access: "public",
         contentType: file.type || "image/jpeg",
-        addRandomSuffix: false,
-        allowOverwrite: true,
+        addRandomSuffix: true,
       });
 
       const product = products.find((p: { id: string }) => p.id.toUpperCase() === id);
       if (product) {
-        product.image = `${url}?t=${Date.now()}`;
+        product.image = url;
         matched++;
       } else {
         unmatched++;

@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
 
       const product = products.find((p: { id: string }) => p.id.toUpperCase() === id);
       if (product) {
-        product.image = url;
+        product.image = `${url}?t=${Date.now()}`;
         matched++;
       } else {
         unmatched++;

@@ -13,7 +13,7 @@ async function verifyToken(token: string, secret: string, message: string): Prom
   return token === expected;
 }
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // ── Admin routes ────────────────────────────────────────────────────────────

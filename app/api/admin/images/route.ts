@@ -3,8 +3,9 @@ import { put, list } from "@vercel/blob";
 import path from "path";
 import fs from "fs";
 
+const IMAGES_KEY = "product-images.json";
+
 async function loadProducts() {
-  // Try Blob first
   try {
     const { blobs } = await list({ prefix: "products.json" });
     const blob = blobs.find((b) => b.pathname === "products.json");
@@ -12,12 +13,20 @@ async function loadProducts() {
       const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
       return await res.json();
     }
-  } catch {
-    // fall through to local
-  }
-  // Local fallback
+  } catch { /* fall through */ }
   const filePath = path.join(process.cwd(), "data", "products.json");
   return JSON.parse(fs.readFileSync(filePath, "utf-8"));
+}
+
+async function loadImageOverrides(): Promise<Record<string, string>> {
+  try {
+    const { blobs } = await list({ prefix: IMAGES_KEY });
+    const blob = blobs.find((b) => b.pathname === IMAGES_KEY);
+    if (!blob) return {};
+    const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
+    if (!res.ok) return {};
+    return await res.json();
+  } catch { return {}; }
 }
 
 export async function POST(req: NextRequest) {
@@ -29,7 +38,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No images provided." }, { status: 400 });
     }
 
-    const products = await loadProducts();
+    const [products, imageOverrides] = await Promise.all([loadProducts(), loadImageOverrides()]);
 
     let matched = 0;
     let unmatched = 0;
@@ -49,14 +58,15 @@ export async function POST(req: NextRequest) {
 
       const product = products.find((p: { id: string }) => p.id.toUpperCase() === id);
       if (product) {
-        product.image = url;
+        imageOverrides[id] = url;
         matched++;
       } else {
         unmatched++;
       }
     }
 
-    await put("products.json", JSON.stringify(products, null, 2), {
+    // Save only the image overrides — never touch products.json
+    await put(IMAGES_KEY, JSON.stringify(imageOverrides, null, 2), {
       access: "public",
       contentType: "application/json",
       addRandomSuffix: false,

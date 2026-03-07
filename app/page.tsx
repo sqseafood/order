@@ -6,19 +6,35 @@ import ProductBrowser from "@/components/ProductBrowser";
 
 export const dynamic = "force-dynamic";
 
+async function loadImageOverrides(): Promise<Record<string, string>> {
+  try {
+    const { blobs } = await list({ prefix: "product-images.json" });
+    const blob = blobs.find((b) => b.pathname === "product-images.json");
+    if (!blob) return {};
+    const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
+    if (!res.ok) return {};
+    return await res.json();
+  } catch { return {}; }
+}
+
 async function loadProducts(): Promise<Product[]> {
+  let products: Product[] = [];
   try {
     const { blobs } = await list({ prefix: "products.json" });
     const blob = blobs.find((b) => b.pathname === "products.json");
     if (blob) {
       const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
-      return await res.json();
+      products = await res.json();
     }
   } catch {
     // fall through to local file
   }
-  const filePath = path.join(process.cwd(), "data", "products.json");
-  return JSON.parse(fs.readFileSync(filePath, "utf-8"));
+  if (!products.length) {
+    const filePath = path.join(process.cwd(), "data", "products.json");
+    products = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+  }
+  const imageOverrides = await loadImageOverrides();
+  return products.map((p) => ({ ...p, image: imageOverrides[p.id] || p.image }));
 }
 
 export default async function HomePage() {

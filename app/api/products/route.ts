@@ -6,20 +6,36 @@ import { mergeMAS200WithProducts, getMAS200LastUpdated } from "@/lib/mas200";
 
 export const dynamic = "force-dynamic";
 
+async function loadImageOverrides(): Promise<Record<string, string>> {
+  try {
+    const { blobs } = await list({ prefix: "product-images.json" });
+    const blob = blobs.find((b) => b.pathname === "product-images.json");
+    if (!blob) return {};
+    const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
+    if (!res.ok) return {};
+    return await res.json();
+  } catch { return {}; }
+}
+
 async function getBaseProducts() {
   // Try Vercel Blob first, then local file
+  let products = null;
   try {
     const { blobs } = await list({ prefix: "products.json" });
     const blob = blobs.find((b) => b.pathname === "products.json");
     if (blob) {
       const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
-      return await res.json();
+      products = await res.json();
     }
   } catch {
     // fall through
   }
-  const filePath = path.join(process.cwd(), "data", "products.json");
-  return JSON.parse(fs.readFileSync(filePath, "utf-8"));
+  if (!products) {
+    const filePath = path.join(process.cwd(), "data", "products.json");
+    products = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+  }
+  const imageOverrides = await loadImageOverrides();
+  return products.map((p: Product) => ({ ...p, image: imageOverrides[p.id] || p.image }));
 }
 
 export async function GET() {

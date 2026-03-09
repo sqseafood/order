@@ -3,6 +3,7 @@ import path from "path";
 import { list } from "@vercel/blob";
 import type { Product } from "@/types";
 import ProductBrowser from "@/components/ProductBrowser";
+import { mergeMAS200WithProducts } from "@/lib/mas200";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,8 @@ async function loadProducts(): Promise<Product[]> {
     products = JSON.parse(fs.readFileSync(filePath, "utf-8"));
   }
   const imageOverrides = await loadImageOverrides();
-  return products.map((p) => ({ ...p, image: imageOverrides[p.id] || p.image }));
+  products = products.map((p) => ({ ...p, image: imageOverrides[p.id] || p.image }));
+  return mergeMAS200WithProducts(products) ?? products;
 }
 
 export default async function HomePage() {

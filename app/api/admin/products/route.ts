@@ -4,6 +4,7 @@ import nodemailer from "nodemailer";
 import fs from "fs";
 import path from "path";
 import { readWaitlist, writeWaitlist } from "@/app/api/notify-me/route";
+import { mergeMAS200WithProducts } from "@/lib/mas200";
 import type { Product } from "@/types";
 
 async function loadCurrentProducts(): Promise<{ products: Product[]; fromBlob: boolean }> {
@@ -127,13 +128,12 @@ export async function PATCH(req: NextRequest) {
     }
 
     const { products, fromBlob } = await loadCurrentProducts();
-    if (!products.length) {
-      return NextResponse.json({ error: "No products found to update." }, { status: 404 });
-    }
 
     const updateMap = new Map(
       updates.map((u: { id: string; category: string; pack?: string; packType?: string }) => [u.id, u])
     );
+
+    // Update existing products
     const updated = products.map((p: Product) => {
       if (!updateMap.has(p.id)) return p;
       const u = updateMap.get(p.id)!;
@@ -144,6 +144,17 @@ export async function PATCH(req: NextRequest) {
         ...(u.packType !== undefined && u.packType !== "" && { packType: u.packType }),
       };
     });
+
+    // Add new MAS200 items that aren't in products.json yet
+    const existingIds = new Set(products.map((p: Product) => p.id));
+    const newIds = updates.filter((u: { id: string }) => !existingIds.has(u.id));
+    if (newIds.length > 0) {
+      const merged = mergeMAS200WithProducts(products) ?? [];
+      for (const u of newIds) {
+        const mas = merged.find((p) => p.id === u.id);
+        if (mas) updated.push({ ...mas, category: u.category, oos: false });
+      }
+    }
 
     await saveProducts(updated, fromBlob);
     return NextResponse.json({ success: true, updated: updates.length });

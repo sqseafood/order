@@ -3,6 +3,7 @@ import { list } from "@vercel/blob";
 import fs from "fs";
 import path from "path";
 import { mergeMAS200WithProducts, getMAS200LastUpdated } from "@/lib/mas200";
+import type { Product } from "@/types";
 
 export const dynamic = "force-dynamic";
 

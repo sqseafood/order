@@ -149,7 +149,7 @@ export async function PATCH(req: NextRequest) {
     const existingIds = new Set(products.map((p: Product) => p.id));
     const newIds = updates.filter((u: { id: string }) => !existingIds.has(u.id));
     if (newIds.length > 0) {
-      const merged = mergeMAS200WithProducts(products) ?? [];
+      const merged = (await mergeMAS200WithProducts(products)) ?? [];
       for (const u of newIds) {
         const mas = merged.find((p) => p.id === u.id);
         if (mas) updated.push({ ...mas, category: u.category, oos: false });

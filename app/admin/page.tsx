@@ -231,6 +231,32 @@ export default function AdminPage() {
   const [status, setStatus] = useState<Status>(null);
   const [uploading, setUploading] = useState(false);
 
+  // PRN upload state
+  const prnInputRef = useRef<HTMLInputElement>(null);
+  const [prnFile, setPrnFile] = useState<File | null>(null);
+  const [prnUploading, setPrnUploading] = useState(false);
+  const [prnStatus, setPrnStatus] = useState<Status>(null);
+
+  async function handlePrnUpload() {
+    if (!prnFile) return;
+    setPrnUploading(true);
+    setPrnStatus(null);
+    try {
+      const form = new FormData();
+      form.append("file", prnFile);
+      const res = await fetch("/api/admin/pricelist", { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload failed.");
+      setPrnStatus({ type: "success", message: `✓ Price list updated — ${data.count} products loaded.` });
+      setPrnFile(null);
+      if (prnInputRef.current) prnInputRef.current.value = "";
+    } catch (err) {
+      setPrnStatus({ type: "error", message: (err as Error).message });
+    } finally {
+      setPrnUploading(false);
+    }
+  }
+
   // Image upload state
   const [imgFiles, setImgFiles] = useState<File[]>([]);
   const [imgStatus, setImgStatus] = useState<Status>(null);
@@ -621,6 +647,40 @@ const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
         <p>2. File → Save As → <strong>Text (Tab delimited) (.txt)</strong></p>
         <p>3. Upload that .txt file here</p>
         <p className="pt-1 text-blue-600">All columns (packaging, origin, method, weight, case price) are imported automatically.</p>
+      </div>
+
+      {/* ── MAS 200 PRN Upload ── */}
+      <div className="mt-10">
+        <h2 className="text-lg font-bold text-gray-900 mb-1">MAS 200 Inventory</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Upload the <strong className="text-gray-700">mas200.prn</strong> file exported from MAS 200 to update prices and stock status instantly.
+        </p>
+        <div
+          onClick={() => prnInputRef.current?.click()}
+          className="border-2 border-dashed border-gray-300 hover:border-orange-400 rounded-2xl p-8 text-center cursor-pointer transition-colors"
+        >
+          <input ref={prnInputRef} type="file" accept=".prn,.txt"
+            className="hidden" onChange={(e) => setPrnFile(e.target.files?.[0] ?? null)} />
+          <div className="text-4xl mb-3">📋</div>
+          <p className="text-sm font-medium text-gray-700">
+            {prnFile ? prnFile.name : "Click to browse for mas200.prn"}
+          </p>
+          <p className="text-xs text-gray-400 mt-1">.prn or .txt</p>
+        </div>
+        {prnFile && (
+          <button onClick={handlePrnUpload} disabled={prnUploading}
+            className="mt-3 w-full bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl transition-colors">
+            {prnUploading ? "Uploading…" : "Update Inventory"}
+          </button>
+        )}
+        {prnStatus && (
+          <div className={`mt-4 p-3 rounded-xl text-sm font-medium ${
+            prnStatus.type === "success"
+              ? "bg-green-50 border border-green-200 text-green-700"
+              : "bg-red-50 border border-red-200 text-red-700"}`}>
+            {prnStatus.message}
+          </div>
+        )}
       </div>
 
       {/* ── Image Upload ── */}

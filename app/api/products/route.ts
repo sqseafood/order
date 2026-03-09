@@ -43,12 +43,15 @@ export async function GET() {
   const baseProducts = await getBaseProducts();
 
   // Merge with MAS 200 live export if available
-  const merged = mergeMAS200WithProducts(baseProducts);
+  const [merged, lastUpdated] = await Promise.all([
+    mergeMAS200WithProducts(baseProducts),
+    getMAS200LastUpdated(),
+  ]);
   if (merged) {
     return NextResponse.json(merged, {
       headers: {
         "X-Data-Source": "MAS200",
-        "X-Last-Updated": getMAS200LastUpdated() ?? "",
+        "X-Last-Updated": lastUpdated ?? "",
       },
     });
   }

@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { list } from "@vercel/blob";
 import type { Product } from "@/types";
 
 // ── PRN parser (fixed-width MAS 200 price list report) ──────────────────────
@@ -33,9 +34,6 @@ function parsePRNLine(line: string): Partial<Product> | null {
   const name      = line.substring(0, 31).trim();
   const origin    = line.substring(47, 58).trim();
   const method    = line.substring(58, 68).trim();           // WILD / FARMED
-  const packaging = line.substring(68, 89).trim()
-                        .replace(/\s{2,}.+$/, "")            // strip weight part
-                        .trim();
   const weightStr = line.substring(79, 89).trim();
   // Weight col overlaps packaging — grab last standalone number before prices
   const weightMatch = line
@@ -64,19 +62,13 @@ function parsePRNLine(line: string): Partial<Product> | null {
   };
 }
 
-function parseMAS200PRN(): Map<string, Partial<Product>> | null {
-  const prnPath = path.join(process.cwd(), "data", "mas200.prn");
-  if (!fs.existsSync(prnPath)) return null;
-
-  const lines = fs.readFileSync(prnPath, "utf-8").split(/\r?\n/);
+function parsePRNContent(content: string): Map<string, Partial<Product>> {
   const result = new Map<string, Partial<Product>>();
-
-  for (const line of lines) {
+  for (const line of content.split(/\r?\n/)) {
     const item = parsePRNLine(line);
     if (item?.id) result.set(item.id, item);
   }
-
-  return result.size > 0 ? result : null;
+  return result;
 }
 
 // ── CSV parser (fallback if someone exports a CSV instead) ──────────────────
@@ -137,17 +129,33 @@ function parseMAS200CSV(): Map<string, Partial<Product>> | null {
   return result.size > 0 ? result : null;
 }
 
-/**
- * Merges MAS 200 live inventory with the existing products list:
- * - Items in MAS 200 export → in stock (add if new, update price if existing)
- * - Items in existing list but NOT in MAS 200 export → marked OOS
- * - Items in MAS 200 export but NOT in existing list → added as new
- */
-export function mergeMAS200WithProducts(existing: Product[]): Product[] | null {
-  // PRN takes priority, fall back to CSV
-  const mas200 = parseMAS200PRN() ?? parseMAS200CSV();
-  if (!mas200) return null;
+// ── Blob-aware loader ────────────────────────────────────────────────────────
+async function getMAS200Map(): Promise<Map<string, Partial<Product>> | null> {
+  // 1. Try Vercel Blob (uploaded via admin)
+  try {
+    const { blobs } = await list({ prefix: "mas200.prn" });
+    const blob = blobs.find((b) => b.pathname === "mas200.prn");
+    if (blob) {
+      const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
+      if (res.ok) {
+        const map = parsePRNContent(await res.text());
+        if (map.size > 0) return map;
+      }
+    }
+  } catch {}
 
+  // 2. Fall back to local PRN file
+  const prnPath = path.join(process.cwd(), "data", "mas200.prn");
+  if (fs.existsSync(prnPath)) {
+    const map = parsePRNContent(fs.readFileSync(prnPath, "utf-8"));
+    if (map.size > 0) return map;
+  }
+
+  // 3. Fall back to CSV
+  return parseMAS200CSV();
+}
+
+function applyMAS200Map(existing: Product[], mas200: Map<string, Partial<Product>>): Product[] {
   const existingMap = new Map(existing.map((p) => [p.id, p]));
   const merged: Product[] = [];
 
@@ -155,16 +163,13 @@ export function mergeMAS200WithProducts(existing: Product[]): Product[] | null {
   for (const [id, mas] of mas200) {
     const known = existingMap.get(id);
     if (known) {
-      // Existing item: preserve rich metadata, refresh price from MAS 200
       merged.push({
         ...known,
         price:     mas.price     ?? known.price,
         unitPrice: mas.unitPrice ?? known.unitPrice,
-        // PRN has no real category — always keep the existing one
         oos:       false,
       });
     } else {
-      // Brand new item from MAS 200
       merged.push({
         id:          mas.id!,
         name:        mas.name!,
@@ -191,7 +196,6 @@ export function mergeMAS200WithProducts(existing: Product[]): Product[] | null {
     }
   }
 
-  // Sort: in-stock first, then OOS; within each group sort by category then name
   merged.sort((a, b) => {
     if (a.oos !== b.oos) return a.oos ? 1 : -1;
     if (a.category !== b.category) return a.category.localeCompare(b.category);
@@ -201,7 +205,22 @@ export function mergeMAS200WithProducts(existing: Product[]): Product[] | null {
   return merged;
 }
 
-export function getMAS200LastUpdated(): string | null {
+/**
+ * Merges MAS 200 live inventory with the existing products list.
+ * Checks Vercel Blob first (admin-uploaded), falls back to local file.
+ */
+export async function mergeMAS200WithProducts(existing: Product[]): Promise<Product[] | null> {
+  const mas200 = await getMAS200Map();
+  if (!mas200) return null;
+  return applyMAS200Map(existing, mas200);
+}
+
+export async function getMAS200LastUpdated(): Promise<string | null> {
+  try {
+    const { blobs } = await list({ prefix: "mas200.prn" });
+    const blob = blobs.find((b) => b.pathname === "mas200.prn");
+    if (blob) return new Date(blob.uploadedAt).toISOString();
+  } catch {}
   for (const name of ["mas200.prn", "mas200.csv"]) {
     const p = path.join(process.cwd(), "data", name);
     if (fs.existsSync(p)) return fs.statSync(p).mtime.toISOString();

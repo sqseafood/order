@@ -36,7 +36,7 @@ async function loadProducts(): Promise<Product[]> {
   }
   const imageOverrides = await loadImageOverrides();
   products = products.map((p) => ({ ...p, image: imageOverrides[p.id] || p.image }));
-  return mergeMAS200WithProducts(products) ?? products;
+  return (await mergeMAS200WithProducts(products)) ?? products;
 }
 
 export default async function HomePage() {

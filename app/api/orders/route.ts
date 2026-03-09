@@ -56,7 +56,7 @@ interface CustomerRecord {
   orderCount: number;
 }
 
-async function nextPickupNumber(): Promise<string> {
+async function nextPickupNumber(existingOrders: StoredOrder[]): Promise<string> {
   const { blobs } = await list({ prefix: "pickup-counter.json" });
   const blob = blobs.find((b) => b.pathname === "pickup-counter.json");
   let counter = 10001;
@@ -67,6 +67,13 @@ async function nextPickupNumber(): Promise<string> {
       counter = (data.counter ?? 10000) + 1;
     }
   }
+  // Guard against race conditions: skip any numbers already used today
+  const maxUsed = existingOrders.reduce((max, o) => {
+    const n = parseInt(o.pickupNumber);
+    return isNaN(n) ? max : Math.max(max, n);
+  }, 10000);
+  counter = Math.max(counter, maxUsed + 1);
+
   await put("pickup-counter.json", JSON.stringify({ counter }), {
     access: "public",
     contentType: "application/json",
@@ -129,7 +136,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const pickupNumber = await nextPickupNumber();
+    const todayOrders = await loadTodayOrders();
+    const pickupNumber = await nextPickupNumber(todayOrders);
 
     const itemRows = items.map((i) =>
       `  Item# ${i.product.id} • ${i.product.name}  Qty: ${i.quantity}  =  $${(i.product.price * i.quantity).toFixed(2)}`
@@ -185,19 +193,17 @@ Order Total: $${total.toFixed(2)}
       text: `Thank you, ${customer.name}! Your order has been received.\n\nYour pickup number is: ${pickupNumber}\nPickup: TODAY (${pickupDate}), 12:00 PM – 4:00 PM\nLocation: SeaQuest Seafood\n\n${body}\n\nPlease note: this is a same-day pickup order only.`,
     });
 
-    // Save order to today's order list (non-blocking)
-    loadTodayOrders().then((orders) => {
-      orders.push({
-        id: pickupNumber,
-        pickupNumber,
-        customer,
-        items,
-        total,
-        orderedAt: new Date().toISOString(),
-        status: "new",
-      });
-      return saveTodayOrders(orders);
-    }).catch(console.error);
+    // Save order to today's order list (blocking — prevents duplicate pickup numbers)
+    todayOrders.push({
+      id: pickupNumber,
+      pickupNumber,
+      customer,
+      items,
+      total,
+      orderedAt: new Date().toISOString(),
+      status: "new",
+    });
+    await saveTodayOrders(todayOrders);
 
     // Save customer to database (non-blocking)
     saveCustomer(customer);

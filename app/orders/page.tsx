@@ -326,10 +326,10 @@ function OrderCard({
           <span className="text-xs text-gray-400">{formatTime(order.orderedAt)}</span>
           <button
             onClick={() => printOrder(order)}
-            className="text-xs text-gray-400 hover:text-gray-600 border border-gray-200 px-2 py-1 rounded-lg transition-colors"
+            className="text-xs text-gray-600 hover:text-gray-900 bg-white border border-gray-300 px-2.5 py-1 rounded-lg transition-colors font-medium"
             title="Print order"
           >
-            🖨️
+            Print
           </button>
         </div>
       </div>

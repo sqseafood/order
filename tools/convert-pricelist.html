@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Price List Converter</title>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f5;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .card {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.1);
+      padding: 36px 40px;
+      width: 100%;
+      max-width: 480px;
+    }
+    h1 { font-size: 1.4rem; color: #111; margin-bottom: 4px; }
+    .subtitle { font-size: 0.875rem; color: #666; margin-bottom: 28px; }
+
+    label.file-label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #444;
+      margin-bottom: 8px;
+    }
+    .file-drop {
+      border: 2px dashed #d1d5db;
+      border-radius: 8px;
+      padding: 28px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      margin-bottom: 20px;
+      position: relative;
+    }
+    .file-drop:hover, .file-drop.dragover {
+      border-color: #f97316;
+      background: #fff7f0;
+    }
+    .file-drop input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+    .file-icon { font-size: 2rem; margin-bottom: 8px; }
+    .file-drop .hint { font-size: 0.85rem; color: #888; }
+    .file-drop .filename { font-size: 0.9rem; font-weight: 600; color: #111; margin-top: 6px; }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      background: #f97316;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover:not(:disabled) { background: #ea6c10; }
+    button:disabled { background: #fbc99e; cursor: not-allowed; }
+
+    .status {
+      margin-top: 16px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      display: none;
+    }
+    .status.success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; display: block; }
+    .status.error   { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; display: block; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Price List Converter</h1>
+    <p class="subtitle">Convert SeaQuest Excel price list → CSV for admin upload</p>
+
+    <label class="file-label">Select Excel File (.xlsx)</label>
+    <div class="file-drop" id="dropZone">
+      <input type="file" id="fileInput" accept=".xlsx,.xls" />
+      <div class="file-icon">📂</div>
+      <div class="hint">Click to browse or drag & drop</div>
+      <div class="filename" id="fileName"></div>
+    </div>
+
+    <button id="convertBtn" disabled onclick="convert()">Convert to CSV</button>
+
+    <div class="status" id="status"></div>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById("fileInput");
+    const fileNameEl = document.getElementById("fileName");
+    const convertBtn = document.getElementById("convertBtn");
+    const statusEl = document.getElementById("status");
+    const dropZone = document.getElementById("dropZone");
+
+    fileInput.addEventListener("change", () => {
+      if (fileInput.files[0]) {
+        fileNameEl.textContent = fileInput.files[0].name;
+        convertBtn.disabled = false;
+        statusEl.className = "status";
+      }
+    });
+
+    dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.classList.add("dragover"); });
+    dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
+    dropZone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropZone.classList.remove("dragover");
+      const file = e.dataTransfer.files[0];
+      if (file) {
+        fileNameEl.textContent = file.name;
+        convertBtn.disabled = false;
+        statusEl.className = "status";
+        // Assign to input for later use
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        fileInput.files = dt.files;
+      }
+    });
+
+    const OUTPUT_HEADER = [
+      "Product Description", "Vietnamese", "Item #", "Category",
+      "Unit Price", "Packaging", "Origin", "Method",
+      "Weight (lbs)", "Pack", "Pack Type", "Case price"
+    ];
+
+    // Column indices in the source Excel
+    const SRC = { name:0, description:1, id:2, unitPrice:3, packaging:4, origin:5, method:6, weight:7, pack:8, packType:9, price:10 };
+
+    function csvCell(value) {
+      const str = String(value ?? "").trim();
+      if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+        return '"' + str.replace(/"/g, '""') + '"';
+      }
+      return str;
+    }
+
+    function convert() {
+      statusEl.className = "status";
+      const file = fileInput.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const wb = XLSX.read(data, { type: "array", cellText: true, cellNF: true });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
+
+          let currentCategory = "";
+          let headerFound = false;
+          const lines = [OUTPUT_HEADER.map(csvCell).join(",")];
+          let count = 0;
+
+          for (const row of rows) {
+            const first = String(row[0] ?? "").trim();
+
+            if (first.startsWith("▶")) {
+              currentCategory = first.replace(/^▶\s*/, "").trim();
+              continue;
+            }
+            if (first === "Product Description") { headerFound = true; continue; }
+            if (!headerFound || !first || !currentCategory) continue;
+
+            const get = (col) => String(row[col] ?? "").trim();
+            const outRow = [
+              get(SRC.name), get(SRC.description), get(SRC.id),
+              currentCategory,
+              get(SRC.unitPrice), get(SRC.packaging), get(SRC.origin),
+              get(SRC.method), get(SRC.weight), get(SRC.pack),
+              get(SRC.packType), get(SRC.price),
+            ];
+            lines.push(outRow.map(csvCell).join(","));
+            count++;
+          }
+
+          if (count === 0) throw new Error("No product rows found. Check the Excel format.");
+
+          // Download the CSV
+          const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "output.csv";
+          a.click();
+          URL.revokeObjectURL(url);
+
+          statusEl.className = "status success";
+          statusEl.textContent = `✓ Converted ${count} products. Upload output.csv on the admin page.`;
+        } catch (err) {
+          statusEl.className = "status error";
+          statusEl.textContent = "Error: " + err.message;
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+  </script>
+</body>
+</html>

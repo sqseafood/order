@@ -4,7 +4,20 @@
       "Bash(npm install:*)",
       "Bash(npx tsc:*)",
       "Bash(npm run:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Read(//c/Users/oper4/**)",
+      "Bash(npx create-next-app@latest stock-ai --typescript --tailwind --app --no-eslint --no-src-dir --import-alias \"@/*\")",
+      "Bash(npx create-next-app@latest:*)",
+      "Bash(node:*)",
+      "Bash(grep \"\"version\"\":*)",
+      "Bash(npm uninstall:*)",
+      "Bash(curl:*)",
+      "Bash(gh repo:*)",
+      "Bash(gh auth:*)",
+      "Bash(npx vercel:*)",
+      "Bash(python3:*)",
+      "WebFetch(domain:www.sqseafood.com)",
+      "WebFetch(domain:sqseafood.com)"
     ]
   }
 }

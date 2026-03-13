@@ -262,6 +262,31 @@ export default function OrdersPage() {
 }
 
 // ── Order Card ──────────────────────────────────────────────────────────────
+function printOrder(order: StoredOrder) {
+  const itemRows = order.items
+    .map(
+      (i) =>
+        `<tr><td style="padding:4px 8px 4px 0">${i.product.id}</td><td style="padding:4px 8px">${i.product.name}</td><td style="padding:4px 0 4px 8px;text-align:right">×${i.quantity}</td><td style="padding:4px 0 4px 16px;text-align:right">$${(i.product.price * i.quantity).toFixed(2)}</td></tr>`
+    )
+    .join("");
+  const win = window.open("", "_blank", "width=400,height=600");
+  if (!win) return;
+  win.document.write(`<!DOCTYPE html><html><head><title>Order #${order.pickupNumber}</title>
+    <style>body{font-family:monospace;padding:24px;font-size:14px}h2{margin:0 0 4px}p{margin:2px 0}table{width:100%;border-collapse:collapse;margin-top:12px}tfoot td{border-top:1px solid #000;font-weight:bold;padding-top:6px}</style>
+    </head><body>
+    <h2>Order #${order.pickupNumber}</h2>
+    <p>${formatTime(order.orderedAt)}</p>
+    <hr style="margin:8px 0"/>
+    <p><strong>${order.customer.name}</strong></p>
+    <p>${order.customer.phone}</p>
+    <table><tbody>${itemRows}</tbody>
+    <tfoot><tr><td colspan="3">Total</td><td style="text-align:right">$${order.total.toFixed(2)}</td></tr></tfoot>
+    </table>
+    <script>window.onload=()=>{window.print();window.close()}<\/script>
+    </body></html>`);
+  win.document.close();
+}
+
 function OrderCard({
   order,
   staffName,
@@ -297,7 +322,16 @@ function OrderCard({
           {isDone && <CheckCircleIcon className="w-5 h-5 text-green-500" />}
           {isProcessing && !isMine && <LockClosedIcon className="w-4 h-4 text-blue-400" />}
         </div>
-        <span className="text-xs text-gray-400">{formatTime(order.orderedAt)}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-400">{formatTime(order.orderedAt)}</span>
+          <button
+            onClick={() => printOrder(order)}
+            className="text-xs text-gray-400 hover:text-gray-600 border border-gray-200 px-2 py-1 rounded-lg transition-colors"
+            title="Print order"
+          >
+            🖨️
+          </button>
+        </div>
       </div>
 
       {/* Customer info */}

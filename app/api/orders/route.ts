@@ -181,7 +181,6 @@ Order Total: $${total.toFixed(2)}
     await transporter.sendMail({
       from: `"SeaQuest Orders" <${process.env.SMTP_USER}>`,
       to: "seaquestwarehouse@gmail.com",
-      cc: "seaquestcecilia@yahoo.com, seaquestcorina@yahoo.com, seaquestmingson@yahoo.com",
       subject: `New Order from ${customer.name}`,
       text: body,
     });
@@ -190,7 +189,7 @@ Order Total: $${total.toFixed(2)}
       from: `"SeaQuest" <${process.env.SMTP_USER}>`,
       to: customer.email,
       subject: `Your SeaQuest Order Confirmation — Pickup #${pickupNumber}`,
-      text: `Thank you, ${customer.name}! Your order has been received.\n\nYour pickup number is: ${pickupNumber}\nPickup: TODAY (${pickupDate}), 12:00 PM – 4:00 PM\nLocation: SeaQuest Seafood\n\n${body}\n\nPlease note: this is a same-day pickup order only.`,
+      text: `Thank you, ${customer.name}! Your order has been received.\n\nYour pickup number is: ${pickupNumber}`,
     });
 
     // Save order to today's order list (blocking — prevents duplicate pickup numbers)

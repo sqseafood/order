@@ -133,7 +133,10 @@ export default function CartPage() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-start justify-between gap-2">
-                <h3 className="font-semibold text-gray-900 text-sm leading-tight">{product.name}</h3>
+                <div>
+                  <p className="text-xs text-gray-400 mb-0.5">#{product.id}</p>
+                  <h3 className="font-semibold text-gray-900 text-sm leading-tight">{product.name}</h3>
+                </div>
                 <button onClick={() => removeItem(product.id)} className="text-gray-300 hover:text-red-400 transition-colors flex-shrink-0">
                   <TrashIcon className="w-4 h-4" />
                 </button>

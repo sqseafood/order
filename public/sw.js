@@ -1,4 +1,4 @@
-const CACHE_NAME = "seaquest-v1";
+const CACHE_NAME = "seaquest-v2";
 const STATIC_ASSETS = ["/", "/cart"];
 
 // Install: cache static pages

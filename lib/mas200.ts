@@ -156,7 +156,10 @@ async function getMAS200Map(): Promise<Map<string, Partial<Product>> | null> {
 }
 
 function applyMAS200Map(existing: Product[], mas200: Map<string, Partial<Product>>): Product[] {
-  const existingMap = new Map(existing.map((p) => [p.id, p]));
+  // Deduplicate by ID, keeping first occurrence
+  const seen = new Set<string>();
+  const deduped = existing.filter((p) => { if (seen.has(p.id)) return false; seen.add(p.id); return true; });
+  const existingMap = new Map(deduped.map((p) => [p.id, p]));
   const merged: Product[] = [];
 
   // 1. All items currently in MAS 200 → in stock
@@ -190,7 +193,7 @@ function applyMAS200Map(existing: Product[], mas200: Map<string, Partial<Product
   }
 
   // 2. Items in existing list but NOT in MAS 200 → mark OOS
-  for (const product of existing) {
+  for (const product of deduped) {
     if (!mas200.has(product.id)) {
       merged.push({ ...product, oos: true });
     }

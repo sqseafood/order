@@ -7,7 +7,7 @@ import ProductCard from "@/components/ProductCard";
 
 export default function ProductBrowser({ products }: { products: Product[] }) {
   const categories = useMemo(
-    () => Array.from(new Set(products.map((p) => p.category))),
+    () => Array.from(new Set(products.map((p) => p.category))).sort(),
     [products]
   );
 

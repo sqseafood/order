@@ -152,7 +152,13 @@ export async function PATCH(req: NextRequest) {
       const merged = (await mergeMAS200WithProducts(products)) ?? [];
       for (const u of newIds) {
         const mas = merged.find((p) => p.id === u.id);
-        if (mas) updated.push({ ...mas, category: u.category, oos: false });
+        if (mas) updated.push({
+          ...mas,
+          category: u.category,
+          oos: false,
+          ...(u.pack !== undefined && u.pack !== "" && { pack: u.pack }),
+          ...(u.packType !== undefined && u.packType !== "" && { packType: u.packType }),
+        });
       }
     }
 

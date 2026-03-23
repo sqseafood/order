@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, Fragment } from "react";
 import type { Product } from "@/types";
 
 type ParsedProduct = Product & { image: string };
@@ -434,6 +434,11 @@ export default function AdminPage() {
   const [itemsSearch, setItemsSearch] = useState("");
 const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editPack, setEditPack] = useState("");
+  const [editPackType, setEditPackType] = useState("");
+  const [editCategory, setEditCategory] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
 
   async function loadItems() {
     setItemsLoading(true);
@@ -467,6 +472,39 @@ const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
     } finally {
       setDeletingId(null);
       setConfirmDeleteId(null);
+    }
+  }
+
+  function downloadProducts() {
+    if (!allItems) return;
+    const blob = new Blob([JSON.stringify(allItems, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "products.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function saveItemEdit(id: string) {
+    setEditSaving(true);
+    try {
+      const res = await fetch("/api/admin/products", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ updates: [{ id, category: editCategory, pack: editPack, packType: editPackType }] }),
+      });
+      if (!res.ok) throw new Error("Save failed.");
+      setAllItems((prev) =>
+        prev ? prev.map((p) =>
+          p.id === id ? { ...p, category: editCategory || p.category, pack: editPack, packType: editPackType } : p
+        ) : prev
+      );
+      setEditingId(null);
+    } catch (err) {
+      setItemsError((err as Error).message);
+    } finally {
+      setEditSaving(false);
     }
   }
 
@@ -883,18 +921,28 @@ const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
         </div>
       )}
 
-      {/* Items tab — search and remove products */}
+      {/* Items tab — search, edit, and remove products */}
       {tab === "items" && (
         <div>
           <div className="flex items-center justify-between mb-4">
-            <p className="text-sm text-gray-500">Out-of-stock items. Remove discontinued ones permanently.</p>
-            <button
-              onClick={loadItems}
-              disabled={itemsLoading}
-              className="text-xs text-gray-500 hover:text-gray-700 border border-gray-200 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-            >
-              {itemsLoading ? "Loading…" : "Refresh"}
-            </button>
+            <p className="text-sm text-gray-500">All products. Edit pack/type or remove discontinued items.</p>
+            <div className="flex gap-2">
+              <button
+                onClick={loadItems}
+                disabled={itemsLoading}
+                className="text-xs text-gray-500 hover:text-gray-700 border border-gray-200 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {itemsLoading ? "Loading…" : "Refresh"}
+              </button>
+              {allItems && (
+                <button
+                  onClick={downloadProducts}
+                  className="text-xs bg-orange-500 hover:bg-orange-600 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  Download
+                </button>
+              )}
+            </div>
           </div>
 
           {itemsError && (
@@ -910,17 +958,17 @@ const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
               <input
                 type="text"
                 value={itemsSearch}
-                onChange={(e) => { setItemsSearch(e.target.value); setConfirmDeleteId(null); }}
+                onChange={(e) => { setItemsSearch(e.target.value); setConfirmDeleteId(null); setEditingId(null); }}
                 placeholder="Search by name or item#…"
                 className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 mb-3 focus:outline-none focus:border-orange-400"
               />
 
               {(() => {
                 const q = itemsSearch.toLowerCase();
-                const visible = allItems.filter((p) => {
-                  if (!p.oos) return false;
-                  return !q || p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q);
-                });
+                const visible = allItems.filter((p) =>
+                  !q || p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q)
+                );
+                const itemCategories = Array.from(new Set(allItems.map((p) => p.category))).sort();
 
                 if (visible.length === 0) {
                   return <div className="text-center py-12 text-gray-400 text-sm">No items found.</div>;
@@ -940,52 +988,127 @@ const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                           {visible.map((p) => (
-                            <tr key={p.id} className="bg-white hover:bg-gray-50">
-                              <td className="px-3 py-2.5 font-mono text-gray-500 whitespace-nowrap">
-                                {p.id}
-                              </td>
-                              <td className="px-3 py-2.5 text-gray-900">
-                                <div className="font-medium">{p.name}</div>
-                                {p.oos && (
-                                  <span className="text-[10px] bg-red-100 text-red-600 font-semibold px-1.5 py-0.5 rounded-full">
-                                    OOS
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-3 py-2.5 text-gray-500">{p.category}</td>
-                              <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                                {confirmDeleteId === p.id ? (
+                            <Fragment key={p.id}>
+                              <tr className="bg-white hover:bg-gray-50">
+                                <td className="px-3 py-2.5 font-mono text-gray-500 whitespace-nowrap">{p.id}</td>
+                                <td className="px-3 py-2.5 text-gray-900">
+                                  <div className="font-medium">{p.name}</div>
+                                  <div className="flex gap-1 mt-0.5 flex-wrap">
+                                    {p.oos && (
+                                      <span className="text-[10px] bg-red-100 text-red-600 font-semibold px-1.5 py-0.5 rounded-full">OOS</span>
+                                    )}
+                                    {p.pack && (
+                                      <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{p.pack}</span>
+                                    )}
+                                    {p.packType && (
+                                      <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{p.packType}</span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2.5 text-gray-500">{p.category}</td>
+                                <td className="px-3 py-2.5 text-right whitespace-nowrap">
                                   <div className="flex gap-1 justify-end">
                                     <button
-                                      onClick={() => deleteItem(p.id)}
-                                      disabled={deletingId === p.id}
-                                      className="text-[11px] bg-red-500 hover:bg-red-600 text-white font-semibold px-2 py-1 rounded-lg disabled:opacity-50"
+                                      onClick={() => {
+                                        if (editingId === p.id) { setEditingId(null); return; }
+                                        setEditingId(p.id);
+                                        setEditCategory(p.category);
+                                        setEditPack(p.pack ?? "");
+                                        setEditPackType(p.packType ?? "");
+                                        setConfirmDeleteId(null);
+                                      }}
+                                      className="text-[11px] text-blue-400 hover:text-blue-600 border border-blue-200 hover:border-blue-400 px-2 py-1 rounded-lg transition-colors"
                                     >
-                                      {deletingId === p.id ? "…" : "Confirm"}
+                                      {editingId === p.id ? "Cancel" : "Edit"}
                                     </button>
-                                    <button
-                                      onClick={() => setConfirmDeleteId(null)}
-                                      className="text-[11px] text-gray-400 hover:text-gray-600 border border-gray-200 px-2 py-1 rounded-lg"
-                                    >
-                                      Cancel
-                                    </button>
+                                    {p.oos && (confirmDeleteId === p.id ? (
+                                      <div className="flex gap-1">
+                                        <button
+                                          onClick={() => deleteItem(p.id)}
+                                          disabled={deletingId === p.id}
+                                          className="text-[11px] bg-red-500 hover:bg-red-600 text-white font-semibold px-2 py-1 rounded-lg disabled:opacity-50"
+                                        >
+                                          {deletingId === p.id ? "…" : "Confirm"}
+                                        </button>
+                                        <button
+                                          onClick={() => setConfirmDeleteId(null)}
+                                          className="text-[11px] text-gray-400 hover:text-gray-600 border border-gray-200 px-2 py-1 rounded-lg"
+                                        >
+                                          Cancel
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        onClick={() => setConfirmDeleteId(p.id)}
+                                        className="text-[11px] text-red-400 hover:text-red-600 border border-red-200 hover:border-red-400 px-2 py-1 rounded-lg transition-colors"
+                                      >
+                                        Remove
+                                      </button>
+                                    ))}
                                   </div>
-                                ) : (
-                                  <button
-                                    onClick={() => setConfirmDeleteId(p.id)}
-                                    className="text-[11px] text-red-400 hover:text-red-600 border border-red-200 hover:border-red-400 px-2 py-1 rounded-lg transition-colors"
-                                  >
-                                    Remove
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
+                                </td>
+                              </tr>
+                              {editingId === p.id && (
+                                <tr className="bg-blue-50">
+                                  <td colSpan={4} className="px-3 py-3">
+                                    <div className="flex gap-2 flex-wrap">
+                                      <div className="flex-1 min-w-[130px]">
+                                        <label className="text-[10px] text-gray-500 uppercase font-semibold mb-1 block">Category</label>
+                                        <input
+                                          type="text"
+                                          list="edit-cat-list"
+                                          value={editCategory}
+                                          onChange={(e) => setEditCategory(e.target.value)}
+                                          className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-orange-400"
+                                        />
+                                        <datalist id="edit-cat-list">
+                                          {itemCategories.map((c) => <option key={c} value={c} />)}
+                                        </datalist>
+                                      </div>
+                                      <div className="w-20">
+                                        <label className="text-[10px] text-gray-500 uppercase font-semibold mb-1 block">Pack</label>
+                                        <input
+                                          type="text"
+                                          value={editPack}
+                                          onChange={(e) => setEditPack(e.target.value)}
+                                          placeholder="e.g. VP"
+                                          className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-orange-400"
+                                        />
+                                      </div>
+                                      <div className="w-24">
+                                        <label className="text-[10px] text-gray-500 uppercase font-semibold mb-1 block">Pack Type</label>
+                                        <input
+                                          type="text"
+                                          list="edit-packtype-list"
+                                          value={editPackType}
+                                          onChange={(e) => setEditPackType(e.target.value)}
+                                          placeholder="e.g. Retail"
+                                          className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-orange-400"
+                                        />
+                                        <datalist id="edit-packtype-list">
+                                          {["Retail", "Bulk", "VP", "IWP", "IVP", "Box", "Tray"].map((v) => <option key={v} value={v} />)}
+                                        </datalist>
+                                      </div>
+                                      <div className="flex items-end">
+                                        <button
+                                          onClick={() => saveItemEdit(p.id)}
+                                          disabled={editSaving}
+                                          className="text-[11px] bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                                        >
+                                          {editSaving ? "Saving…" : "Save"}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
                           ))}
                         </tbody>
                       </table>
                     </div>
                     <div className="bg-gray-50 px-3 py-2 text-xs text-gray-400 border-t border-gray-100">
-                      {visible.length} OOS item{visible.length !== 1 ? "s" : ""}
+                      {allItems.filter((p) => p.oos).length} OOS · {allItems.length} total
                     </div>
                   </div>
                 );

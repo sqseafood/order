@@ -25,13 +25,9 @@ async function loadOrders(key: string): Promise<StoredOrder[]> {
   return [];
 }
 
-// GET /api/admin/orders?password=XXX&date=2026-04-03  (date optional, defaults to today)
+// GET /api/admin/orders?date=2026-04-03  (date optional, defaults to today)
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const password = searchParams.get("password");
-  if (password !== process.env.ADMIN_PASSWORD) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-  }
   const date = searchParams.get("date");
   const key = date ? `orders-${date}.json` : getTodayKey();
   const orders = await loadOrders(key);
@@ -39,20 +35,16 @@ export async function GET(req: NextRequest) {
 }
 
 // PATCH /api/admin/orders — force-update an order's status
-// Body: { password, id, status, claimedBy?, date? }
+// Body: { id, status, claimedBy?, date? }
 export async function PATCH(req: NextRequest) {
   try {
-    const { password, id, status, claimedBy, date } = await req.json() as {
-      password: string;
+    const { id, status, claimedBy, date } = await req.json() as {
       id: string;
       status: StoredOrder["status"];
       claimedBy?: string;
       date?: string;
     };
 
-    if (password !== process.env.ADMIN_PASSWORD) {
-      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-    }
     if (!["new", "processing", "done"].includes(status)) {
       return NextResponse.json({ error: "Invalid status." }, { status: 400 });
     }

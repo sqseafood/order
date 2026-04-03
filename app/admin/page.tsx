@@ -2,6 +2,7 @@
 
 import { useRef, useState, useCallback, Fragment } from "react";
 import type { Product } from "@/types";
+import type { StoredOrder } from "@/app/api/orders/route";
 
 type ParsedProduct = Product & { image: string };
 type Status = { type: "success" | "error"; message: string } | null;
@@ -351,7 +352,61 @@ export default function AdminPage() {
 
   const categories = preview ? Array.from(new Set(preview.map((p) => p.category))) : [];
 
-  const [tab, setTab] = useState<"products" | "catalog" | "items" | "customers" | "notifications">("products");
+  const [tab, setTab] = useState<"products" | "catalog" | "items" | "customers" | "notifications" | "orders">("products");
+
+  // ── Orders tab state ───────────────────────────────────────────────────────
+  const [ordersData, setOrdersData] = useState<StoredOrder[] | null>(null);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [ordersError, setOrdersError] = useState<string | null>(null);
+  const [ordersActionId, setOrdersActionId] = useState<string | null>(null);
+
+  async function loadAdminOrders() {
+    setOrdersLoading(true);
+    setOrdersError(null);
+    try {
+      const res = await fetch(`/api/admin/orders?t=${Date.now()}`);
+      if (!res.ok) throw new Error("Failed to load orders.");
+      const data: StoredOrder[] = await res.json();
+      data.sort((a, b) => {
+        const rank: Record<StoredOrder["status"], number> = { new: 0, processing: 1, done: 2 };
+        if (rank[a.status] !== rank[b.status]) return rank[a.status] - rank[b.status];
+        return new Date(b.orderedAt).getTime() - new Date(a.orderedAt).getTime();
+      });
+      setOrdersData(data);
+    } catch (err) {
+      setOrdersError((err as Error).message);
+    } finally {
+      setOrdersLoading(false);
+    }
+  }
+
+  async function forceOrderStatus(id: string, status: StoredOrder["status"]) {
+    setOrdersActionId(id);
+    try {
+      const res = await fetch("/api/admin/orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update order.");
+      const updated = data.order as StoredOrder;
+      setOrdersData((prev) => {
+        if (!prev) return prev;
+        const next = prev.map((o) => (o.id === id ? updated : o));
+        next.sort((a, b) => {
+          const rank: Record<StoredOrder["status"], number> = { new: 0, processing: 1, done: 2 };
+          if (rank[a.status] !== rank[b.status]) return rank[a.status] - rank[b.status];
+          return new Date(b.orderedAt).getTime() - new Date(a.orderedAt).getTime();
+        });
+        return next;
+      });
+    } catch (err) {
+      setOrdersError((err as Error).message);
+    } finally {
+      setOrdersActionId(null);
+    }
+  }
 
   // ── Catalog tab state ──────────────────────────────────────────────────────
   const [catalogItems, setCatalogItems] = useState<Product[] | null>(null);
@@ -582,8 +637,8 @@ const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
       </div>
 
       {/* Tab nav */}
-      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl mb-6">
-        {(["products", "catalog", "items", "customers", "notifications"] as const).map((t) => (
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl mb-6 flex-wrap">
+        {(["products", "catalog", "items", "customers", "notifications", "orders"] as const).map((t) => (
           <button
             key={t}
             onClick={() => {
@@ -592,6 +647,7 @@ const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
               if (t === "notifications" && !waitlist) loadWaitlist();
               if (t === "catalog" && !catalogItems) loadCatalog();
               if (t === "items" && !allItems) loadItems();
+              if (t === "orders") loadAdminOrders();
             }}
             className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
               tab === t ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
@@ -610,7 +666,8 @@ const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
               )
               : t === "items" ? "Items"
               : t === "customers" ? "Customers"
-              : "Notify"}
+              : t === "notifications" ? "Notify"
+              : "Orders"}
           </button>
         ))}
       </div>
@@ -1197,6 +1254,118 @@ const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
           )}
         </div>
       )}
+      {/* Orders tab — view and fix stuck orders */}
+      {tab === "orders" && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm text-gray-500">Today's orders. Force-reset any stuck order.</p>
+            <button
+              onClick={loadAdminOrders}
+              disabled={ordersLoading}
+              className="text-xs text-gray-500 hover:text-gray-700 border border-gray-200 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {ordersLoading ? "Loading…" : "Refresh"}
+            </button>
+          </div>
+
+          {ordersError && (
+            <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700 mb-4">
+              {ordersError}
+            </div>
+          )}
+
+          {ordersLoading && <div className="text-center py-12 text-gray-400 text-sm">Loading…</div>}
+
+          {!ordersLoading && ordersData && ordersData.length === 0 && (
+            <div className="text-center py-12 text-gray-400 text-sm">No orders today.</div>
+          )}
+
+          {!ordersLoading && ordersData && ordersData.length > 0 && (
+            <div className="space-y-2">
+              {ordersData.map((order) => (
+                <div
+                  key={order.id}
+                  className={`rounded-2xl border p-4 ${
+                    order.status === "new"
+                      ? "border-orange-200 bg-orange-50"
+                      : order.status === "processing"
+                      ? "border-blue-200 bg-blue-50"
+                      : "border-gray-100 bg-white opacity-60"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className={`text-lg font-black ${
+                          order.status === "new" ? "text-orange-500"
+                          : order.status === "processing" ? "text-blue-600"
+                          : "text-gray-400"
+                        }`}>
+                          #{order.pickupNumber}
+                        </span>
+                        <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                          order.status === "new" ? "bg-orange-200 text-orange-700"
+                          : order.status === "processing" ? "bg-blue-200 text-blue-700"
+                          : "bg-green-100 text-green-700"
+                        }`}>
+                          {order.status}
+                        </span>
+                      </div>
+                      <p className="text-sm font-semibold text-gray-900">{order.customer.name}</p>
+                      <p className="text-xs text-gray-500">{order.customer.phone}</p>
+                      {order.claimedBy && (
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {order.status === "done" ? "Completed" : "Claimed"} by {order.claimedBy}
+                        </p>
+                      )}
+                      <p className="text-xs text-gray-400">
+                        {new Date(order.orderedAt).toLocaleTimeString("en-US", {
+                          timeZone: "America/Los_Angeles", hour: "numeric", minute: "2-digit"
+                        })}
+                        {" · "}${order.total.toFixed(2)}
+                        {" · "}{order.items.length} item{order.items.length !== 1 ? "s" : ""}
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-1.5 shrink-0">
+                      {order.status !== "new" && (
+                        <button
+                          onClick={() => forceOrderStatus(order.id, "new")}
+                          disabled={ordersActionId === order.id}
+                          className="text-[11px] text-orange-600 hover:text-orange-800 border border-orange-300 hover:border-orange-500 bg-white px-2.5 py-1 rounded-lg disabled:opacity-50 transition-colors font-medium"
+                        >
+                          {ordersActionId === order.id ? "…" : "Reset → New"}
+                        </button>
+                      )}
+                      {order.status !== "processing" && (
+                        <button
+                          onClick={() => forceOrderStatus(order.id, "processing")}
+                          disabled={ordersActionId === order.id}
+                          className="text-[11px] text-blue-600 hover:text-blue-800 border border-blue-300 hover:border-blue-500 bg-white px-2.5 py-1 rounded-lg disabled:opacity-50 transition-colors font-medium"
+                        >
+                          {ordersActionId === order.id ? "…" : "Set → Processing"}
+                        </button>
+                      )}
+                      {order.status !== "done" && (
+                        <button
+                          onClick={() => forceOrderStatus(order.id, "done")}
+                          disabled={ordersActionId === order.id}
+                          className="text-[11px] text-green-600 hover:text-green-800 border border-green-300 hover:border-green-500 bg-white px-2.5 py-1 rounded-lg disabled:opacity-50 transition-colors font-medium"
+                        >
+                          {ordersActionId === order.id ? "…" : "Mark → Done"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <p className="text-xs text-center text-gray-400 pt-1">
+                {ordersData.length} order{ordersData.length !== 1 ? "s" : ""} today
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Notifications tab */}
       {tab === "notifications" && (
         <div>

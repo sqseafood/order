@@ -10,7 +10,7 @@ async function loadProducts() {
     const { blobs } = await list({ prefix: "products.json" });
     const blob = blobs.find((b) => b.pathname === "products.json");
     if (blob) {
-      const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
+      const res = await fetch(blob.downloadUrl, { cache: "no-store" });
       return await res.json();
     }
   } catch { /* fall through */ }
@@ -23,7 +23,7 @@ async function loadImageOverrides(): Promise<Record<string, string>> {
     const { blobs } = await list({ prefix: IMAGES_KEY });
     const blob = blobs.find((b) => b.pathname === IMAGES_KEY);
     if (!blob) return {};
-    const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
+    const res = await fetch(blob.downloadUrl, { cache: "no-store" });
     if (!res.ok) return {};
     return await res.json();
   } catch { return {}; }

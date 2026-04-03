@@ -8,7 +8,7 @@ export async function GET() {
     const { blobs } = await list({ prefix: "customers.json" });
     const blob = blobs.find((b) => b.pathname === "customers.json");
     if (!blob) return NextResponse.json([]);
-    const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
+    const res = await fetch(blob.downloadUrl, { cache: "no-store" });
     if (!res.ok) return NextResponse.json([]);
     return NextResponse.json(await res.json());
   } catch {

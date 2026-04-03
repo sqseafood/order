@@ -31,7 +31,7 @@ async function loadTodayOrders(): Promise<StoredOrder[]> {
     const { blobs } = await list({ prefix: key });
     const blob = blobs.find((b) => b.pathname === key);
     if (blob) {
-      const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
+      const res = await fetch(blob.downloadUrl, { cache: "no-store" });
       if (res.ok) return await res.json();
     }
   } catch {}
@@ -61,7 +61,7 @@ async function nextPickupNumber(existingOrders: StoredOrder[]): Promise<string> 
   const blob = blobs.find((b) => b.pathname === "pickup-counter.json");
   let counter = 10001;
   if (blob) {
-    const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
+    const res = await fetch(blob.downloadUrl, { cache: "no-store" });
     if (res.ok) {
       const data = await res.json();
       counter = (data.counter ?? 10000) + 1;
@@ -89,7 +89,7 @@ async function saveCustomer(customer: { name: string; phone: string; email: stri
     const { blobs } = await list({ prefix: "customers.json" });
     const blob = blobs.find((b) => b.pathname === "customers.json");
     if (blob) {
-      const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
+      const res = await fetch(blob.downloadUrl, { cache: "no-store" });
       if (res.ok) records = await res.json();
     }
     const now = new Date().toISOString();

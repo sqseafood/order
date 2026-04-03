@@ -17,7 +17,7 @@ async function loadTodayOrders(): Promise<StoredOrder[]> {
     const { blobs } = await list({ prefix: key });
     const blob = blobs.find((b) => b.pathname === key);
     if (blob) {
-      const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
+      const res = await fetch(blob.downloadUrl, { cache: "no-store" });
       if (res.ok) return await res.json();
     }
   } catch {}

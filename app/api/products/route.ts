@@ -12,7 +12,7 @@ async function loadImageOverrides(): Promise<Record<string, string>> {
     const { blobs } = await list({ prefix: "product-images.json" });
     const blob = blobs.find((b) => b.pathname === "product-images.json");
     if (!blob) return {};
-    const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
+    const res = await fetch(blob.downloadUrl, { cache: "no-store" });
     if (!res.ok) return {};
     return await res.json();
   } catch { return {}; }
@@ -25,7 +25,7 @@ async function getBaseProducts() {
     const { blobs } = await list({ prefix: "products.json" });
     const blob = blobs.find((b) => b.pathname === "products.json");
     if (blob) {
-      const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
+      const res = await fetch(blob.downloadUrl, { cache: "no-store" });
       products = await res.json();
     }
   } catch {

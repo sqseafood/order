@@ -12,7 +12,7 @@ async function loadCurrentProducts(): Promise<{ products: Product[]; fromBlob: b
     const { blobs } = await list({ prefix: "products.json" });
     const blob = blobs.find((b) => b.pathname === "products.json");
     if (blob) {
-      const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
+      const res = await fetch(blob.downloadUrl, { cache: "no-store" });
       if (res.ok) return { products: await res.json(), fromBlob: true };
     }
   } catch {}

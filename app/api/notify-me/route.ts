@@ -13,7 +13,7 @@ export async function readWaitlist(): Promise<WaitlistEntry[]> {
     const { blobs } = await list({ prefix: "waitlist.json" });
     const blob = blobs.find((b) => b.pathname === "waitlist.json");
     if (!blob) return [];
-    const res = await fetch(`${blob.url}?t=${Date.now()}`, { cache: "no-store" });
+    const res = await fetch(blob.downloadUrl, { cache: "no-store" });
     if (!res.ok) return [];
     return await res.json();
   } catch {

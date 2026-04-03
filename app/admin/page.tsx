@@ -359,6 +359,14 @@ export default function AdminPage() {
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState<string | null>(null);
   const [ordersActionId, setOrdersActionId] = useState<string | null>(null);
+  const [showRestoreForm, setShowRestoreForm] = useState(false);
+  const [restorePickup, setRestorePickup] = useState("");
+  const [restoreName, setRestoreName] = useState("");
+  const [restorePhone, setRestorePhone] = useState("");
+  const [restoreEmail, setRestoreEmail] = useState("");
+  const [restoreTotal, setRestoreTotal] = useState("");
+  const [restoreNote, setRestoreNote] = useState("");
+  const [restoreSaving, setRestoreSaving] = useState(false);
 
   async function loadAdminOrders() {
     setOrdersLoading(true);
@@ -377,6 +385,34 @@ export default function AdminPage() {
       setOrdersError((err as Error).message);
     } finally {
       setOrdersLoading(false);
+    }
+  }
+
+  async function restoreOrder() {
+    if (!restorePickup.trim() || !restoreName.trim()) return;
+    setRestoreSaving(true);
+    setOrdersError(null);
+    try {
+      const res = await fetch("/api/admin/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pickupNumber: restorePickup.trim(),
+          customer: { name: restoreName.trim(), phone: restorePhone.trim(), email: restoreEmail.trim() },
+          total: parseFloat(restoreTotal) || 0,
+          note: restoreNote.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to restore order.");
+      setShowRestoreForm(false);
+      setRestorePickup(""); setRestoreName(""); setRestorePhone("");
+      setRestoreEmail(""); setRestoreTotal(""); setRestoreNote("");
+      await loadAdminOrders();
+    } catch (err) {
+      setOrdersError((err as Error).message);
+    } finally {
+      setRestoreSaving(false);
     }
   }
 
@@ -1259,14 +1295,108 @@ const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
         <div>
           <div className="flex items-center justify-between mb-4">
             <p className="text-sm text-gray-500">Today's orders. Force-reset any stuck order.</p>
-            <button
-              onClick={loadAdminOrders}
-              disabled={ordersLoading}
-              className="text-xs text-gray-500 hover:text-gray-700 border border-gray-200 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-            >
-              {ordersLoading ? "Loading…" : "Refresh"}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowRestoreForm((v) => !v)}
+                className="text-xs bg-orange-500 hover:bg-orange-600 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+              >
+                + Restore Order
+              </button>
+              <button
+                onClick={loadAdminOrders}
+                disabled={ordersLoading}
+                className="text-xs text-gray-500 hover:text-gray-700 border border-gray-200 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {ordersLoading ? "Loading…" : "Refresh"}
+              </button>
+            </div>
           </div>
+
+          {showRestoreForm && (
+            <div className="mb-4 p-4 rounded-2xl border border-orange-200 bg-orange-50 space-y-3">
+              <p className="text-sm font-semibold text-gray-800">Restore Missing Order</p>
+              <p className="text-xs text-gray-500">Enter the details from the confirmation email.</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] uppercase font-semibold text-gray-500 mb-1 block">Pickup # *</label>
+                  <input
+                    type="text"
+                    value={restorePickup}
+                    onChange={(e) => setRestorePickup(e.target.value)}
+                    placeholder="e.g. 10023"
+                    className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-orange-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase font-semibold text-gray-500 mb-1 block">Order Total</label>
+                  <input
+                    type="number"
+                    value={restoreTotal}
+                    onChange={(e) => setRestoreTotal(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-orange-400"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] uppercase font-semibold text-gray-500 mb-1 block">Customer Name *</label>
+                <input
+                  type="text"
+                  value={restoreName}
+                  onChange={(e) => setRestoreName(e.target.value)}
+                  placeholder="Full name"
+                  className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-orange-400"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] uppercase font-semibold text-gray-500 mb-1 block">Phone</label>
+                  <input
+                    type="text"
+                    value={restorePhone}
+                    onChange={(e) => setRestorePhone(e.target.value)}
+                    placeholder="Phone number"
+                    className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-orange-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase font-semibold text-gray-500 mb-1 block">Email</label>
+                  <input
+                    type="email"
+                    value={restoreEmail}
+                    onChange={(e) => setRestoreEmail(e.target.value)}
+                    placeholder="Email address"
+                    className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-orange-400"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] uppercase font-semibold text-gray-500 mb-1 block">Items (from email)</label>
+                <textarea
+                  value={restoreNote}
+                  onChange={(e) => setRestoreNote(e.target.value)}
+                  placeholder="Paste item list from the email here…"
+                  rows={3}
+                  className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-orange-400 resize-none"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={restoreOrder}
+                  disabled={restoreSaving || !restorePickup.trim() || !restoreName.trim()}
+                  className="flex-1 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl transition-colors text-sm"
+                >
+                  {restoreSaving ? "Restoring…" : "Restore Order"}
+                </button>
+                <button
+                  onClick={() => setShowRestoreForm(false)}
+                  className="px-4 text-sm text-gray-500 hover:text-gray-700 border border-gray-200 rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
 
           {ordersError && (
             <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700 mb-4">

@@ -34,6 +34,51 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(orders);
 }
 
+// POST /api/admin/orders — restore a missing order manually
+export async function POST(req: NextRequest) {
+  try {
+    const { pickupNumber, customer, total, note } = await req.json() as {
+      pickupNumber: string;
+      customer: { name: string; phone: string; email: string };
+      total: number;
+      note?: string;
+    };
+
+    if (!pickupNumber || !customer.name) {
+      return NextResponse.json({ error: "Pickup number and customer name are required." }, { status: 400 });
+    }
+
+    const key = getTodayKey();
+    const orders = await loadOrders(key);
+
+    if (orders.find((o) => o.id === pickupNumber)) {
+      return NextResponse.json({ error: `Order #${pickupNumber} already exists.` }, { status: 409 });
+    }
+
+    const restored: StoredOrder = {
+      id: pickupNumber,
+      pickupNumber,
+      customer,
+      items: note ? [{ product: { id: "—", name: note, price: total, category: "" }, quantity: 1 }] as StoredOrder["items"] : [],
+      total,
+      orderedAt: new Date().toISOString(),
+      status: "new",
+    };
+
+    orders.push(restored);
+    await put(key, JSON.stringify(orders, null, 2), {
+      access: "public",
+      contentType: "application/json",
+      addRandomSuffix: false,
+      allowOverwrite: true,
+    });
+
+    return NextResponse.json({ success: true, order: restored });
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
+}
+
 // PATCH /api/admin/orders — force-update an order's status
 // Body: { id, status, claimedBy?, date? }
 export async function PATCH(req: NextRequest) {

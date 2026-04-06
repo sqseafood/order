@@ -39,12 +39,18 @@ async function loadTodayOrders(): Promise<StoredOrder[]> {
 }
 
 async function saveTodayOrders(orders: StoredOrder[]): Promise<void> {
-  await put(getTodayKey(), JSON.stringify(orders, null, 2), {
-    access: "public",
-    contentType: "application/json",
-    addRandomSuffix: false,
-    allowOverwrite: true,
-  });
+  const key = getTodayKey();
+  const body = JSON.stringify(orders, null, 2);
+  const opts = { access: "public" as const, contentType: "application/json", addRandomSuffix: false, allowOverwrite: true };
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await put(key, body, opts);
+      return;
+    } catch (err) {
+      if (attempt === 3) throw err;
+      await new Promise((r) => setTimeout(r, attempt * 500));
+    }
+  }
 }
 
 interface CustomerRecord {
@@ -56,7 +62,10 @@ interface CustomerRecord {
   orderCount: number;
 }
 
-async function nextPickupNumber(existingOrders: StoredOrder[]): Promise<string> {
+// Calculate the next pickup number WITHOUT writing the counter yet.
+// The counter is only persisted after the order blob saves successfully,
+// so a failed save never burns a pickup number or causes duplicates.
+async function calcNextPickupNumber(existingOrders: StoredOrder[]): Promise<number> {
   const { blobs } = await list({ prefix: "pickup-counter.json" });
   const blob = blobs.find((b) => b.pathname === "pickup-counter.json");
   let counter = 10001;
@@ -67,20 +76,21 @@ async function nextPickupNumber(existingOrders: StoredOrder[]): Promise<string> 
       counter = (data.counter ?? 10000) + 1;
     }
   }
-  // Guard against race conditions: skip any numbers already used today
+  // Skip numbers already used today (guards against counter/blob getting out of sync)
   const maxUsed = existingOrders.reduce((max, o) => {
     const n = parseInt(o.pickupNumber);
     return isNaN(n) ? max : Math.max(max, n);
   }, 10000);
-  counter = Math.max(counter, maxUsed + 1);
+  return Math.max(counter, maxUsed + 1);
+}
 
+async function saveCounter(counter: number): Promise<void> {
   await put("pickup-counter.json", JSON.stringify({ counter }), {
     access: "public",
     contentType: "application/json",
     addRandomSuffix: false,
     allowOverwrite: true,
   });
-  return counter.toString();
 }
 
 async function saveCustomer(customer: { name: string; phone: string; email: string }) {
@@ -137,8 +147,31 @@ export async function POST(req: NextRequest) {
     }
 
     const todayOrders = await loadTodayOrders();
-    const pickupNumber = await nextPickupNumber(todayOrders);
+    const pickupNum = await calcNextPickupNumber(todayOrders);
+    const pickupNumber = pickupNum.toString();
 
+    // Commit the order to the blob FIRST.
+    // If this fails the customer sees an error and can retry — no email is sent,
+    // no pickup number is burned, and the counter stays correct.
+    todayOrders.push({
+      id: pickupNumber,
+      pickupNumber,
+      customer,
+      items,
+      total,
+      orderedAt: new Date().toISOString(),
+      status: "new",
+    });
+    await saveTodayOrders(todayOrders);
+
+    // Order is saved. Advance the counter (non-blocking — if this fails the
+    // maxUsed guard in calcNextPickupNumber self-heals it on the next order).
+    saveCounter(pickupNum);
+
+    // Save customer to database (non-blocking)
+    saveCustomer(customer);
+
+    // Send emails after the order is safely persisted.
     const itemRows = items.map((i) =>
       `  Item# ${i.product.id} • ${i.product.name}  Qty: ${i.quantity}  =  $${(i.product.price * i.quantity).toFixed(2)}`
     ).join("\n");
@@ -178,34 +211,20 @@ Order Total: $${total.toFixed(2)}
       },
     });
 
-    await transporter.sendMail({
-      from: `"SeaQuest Orders" <${process.env.SMTP_USER}>`,
-      to: "seaquestwarehouse@gmail.com",
-      subject: `New Order from ${customer.name}`,
-      text: body,
-    });
-
-    await transporter.sendMail({
-      from: `"SeaQuest" <${process.env.SMTP_USER}>`,
-      to: customer.email,
-      subject: `Your SeaQuest Order Confirmation — Pickup #${pickupNumber}`,
-      text: `Thank you, ${customer.name}! Your order has been received.\n\nYour pickup number is: ${pickupNumber}`,
-    });
-
-    // Save order to today's order list (blocking — prevents duplicate pickup numbers)
-    todayOrders.push({
-      id: pickupNumber,
-      pickupNumber,
-      customer,
-      items,
-      total,
-      orderedAt: new Date().toISOString(),
-      status: "new",
-    });
-    await saveTodayOrders(todayOrders);
-
-    // Save customer to database (non-blocking)
-    saveCustomer(customer);
+    await Promise.allSettled([
+      transporter.sendMail({
+        from: `"SeaQuest Orders" <${process.env.SMTP_USER}>`,
+        to: "seaquestwarehouse@gmail.com",
+        subject: `New Order from ${customer.name}`,
+        text: body,
+      }),
+      transporter.sendMail({
+        from: `"SeaQuest" <${process.env.SMTP_USER}>`,
+        to: customer.email,
+        subject: `Your SeaQuest Order Confirmation — Pickup #${pickupNumber}`,
+        text: `Thank you, ${customer.name}! Your order has been received.\n\nYour pickup number is: ${pickupNumber}`,
+      }),
+    ]);
 
     return NextResponse.json({ success: true, pickupNumber });
   } catch (err) {

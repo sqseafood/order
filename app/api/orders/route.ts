@@ -40,31 +40,42 @@ function getLegacyKey(): string {
 export async function loadTodayOrders(): Promise<StoredOrder[]> {
   try {
     const prefix = getTodayPrefix();
-    const { blobs } = await list({ prefix });
-
-    if (blobs.length > 0) {
-      const results = await Promise.all(
-        blobs
-          .filter((b) => b.pathname.endsWith(".json"))
-          .map(async (b) => {
-            try {
-              const res = await fetch(b.downloadUrl, { cache: "no-store" });
-              if (res.ok) return (await res.json()) as StoredOrder;
-            } catch {}
-            return null;
-          })
-      );
-      return results.filter(Boolean) as StoredOrder[];
-    }
-
-    // No new-format orders yet — fall back to legacy daily file (migration path)
     const legacyKey = getLegacyKey();
-    const { blobs: legacyBlobs } = await list({ prefix: legacyKey });
-    const legacyBlob = legacyBlobs.find((b) => b.pathname === legacyKey);
-    if (legacyBlob) {
-      const res = await fetch(legacyBlob.downloadUrl, { cache: "no-store" });
-      if (res.ok) return await res.json();
+
+    // Load both new per-order files and legacy daily file in parallel
+    const [{ blobs: newBlobs }, { blobs: legacyBlobs }] = await Promise.all([
+      list({ prefix }),
+      list({ prefix: legacyKey }),
+    ]);
+
+    const fetches: Promise<StoredOrder | null>[] = [];
+
+    // New per-order files
+    for (const b of newBlobs.filter((b) => b.pathname.endsWith(".json"))) {
+      fetches.push(
+        fetch(b.downloadUrl, { cache: "no-store" })
+          .then((r) => (r.ok ? (r.json() as Promise<StoredOrder>) : null))
+          .catch(() => null)
+      );
     }
+
+    // Legacy daily file
+    const legacyBlob = legacyBlobs.find((b) => b.pathname === legacyKey);
+    let legacyOrders: StoredOrder[] = [];
+    if (legacyBlob) {
+      try {
+        const res = await fetch(legacyBlob.downloadUrl, { cache: "no-store" });
+        if (res.ok) legacyOrders = await res.json();
+      } catch {}
+    }
+
+    const newOrders = (await Promise.all(fetches)).filter(Boolean) as StoredOrder[];
+
+    // Merge: new-format files take precedence; legacy fills in anything missing
+    const byId = new Map<string, StoredOrder>();
+    for (const o of legacyOrders) byId.set(o.id, o);
+    for (const o of newOrders) byId.set(o.id, o); // overwrites legacy if same ID
+    return Array.from(byId.values());
   } catch {}
   return [];
 }

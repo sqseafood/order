@@ -28,31 +28,36 @@ async function loadOrdersForDate(date?: string): Promise<StoredOrder[]> {
 
   try {
     const prefix = prefixForDate(date);
-    const { blobs } = await list({ prefix });
-
-    if (blobs.length > 0) {
-      const results = await Promise.all(
-        blobs
-          .filter((b) => b.pathname.endsWith(".json"))
-          .map(async (b) => {
-            try {
-              const res = await fetch(b.downloadUrl, { cache: "no-store" });
-              if (res.ok) return (await res.json()) as StoredOrder;
-            } catch {}
-            return null;
-          })
-      );
-      return results.filter(Boolean) as StoredOrder[];
-    }
-
-    // Fall back to legacy daily file
     const legacyKey = legacyKeyForDate(date);
-    const { blobs: legacyBlobs } = await list({ prefix: legacyKey });
+
+    const [{ blobs: newBlobs }, { blobs: legacyBlobs }] = await Promise.all([
+      list({ prefix }),
+      list({ prefix: legacyKey }),
+    ]);
+
+    const fetches = newBlobs
+      .filter((b) => b.pathname.endsWith(".json"))
+      .map((b) =>
+        fetch(b.downloadUrl, { cache: "no-store" })
+          .then((r) => (r.ok ? (r.json() as Promise<StoredOrder>) : null))
+          .catch(() => null)
+      );
+
+    let legacyOrders: StoredOrder[] = [];
     const legacyBlob = legacyBlobs.find((b) => b.pathname === legacyKey);
     if (legacyBlob) {
-      const res = await fetch(legacyBlob.downloadUrl, { cache: "no-store" });
-      if (res.ok) return await res.json();
+      try {
+        const res = await fetch(legacyBlob.downloadUrl, { cache: "no-store" });
+        if (res.ok) legacyOrders = await res.json();
+      } catch {}
     }
+
+    const newOrders = (await Promise.all(fetches)).filter(Boolean) as StoredOrder[];
+
+    const byId = new Map<string, StoredOrder>();
+    for (const o of legacyOrders) byId.set(o.id, o);
+    for (const o of newOrders) byId.set(o.id, o);
+    return Array.from(byId.values());
   } catch {}
   return [];
 }

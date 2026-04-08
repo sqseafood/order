@@ -188,15 +188,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing customer info." }, { status: 400 });
     }
 
-    // Reject orders after 4:00 PM Pacific time
-    const pacificHour = parseInt(
-      new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles", hour: "numeric", hour12: false })
-    );
-    if (pacificHour >= 16) {
-      return NextResponse.json(
-        { error: "Ordering is closed for today. Pickup hours are 12:00 PM – 4:00 PM Pacific. Please come back tomorrow." },
-        { status: 400 }
+    // Reject orders after 4:00 PM Pacific time (bypass with X-Test header for race-condition testing only)
+    const isTestRequest = req.headers.get("x-test") === process.env.TEST_SECRET;
+    if (!isTestRequest) {
+      const pacificHour = parseInt(
+        new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles", hour: "numeric", hour12: false })
       );
+      if (pacificHour >= 16) {
+        return NextResponse.json(
+          { error: "Ordering is closed for today. Pickup hours are 12:00 PM – 4:00 PM Pacific. Please come back tomorrow." },
+          { status: 400 }
+        );
+      }
     }
 
     const pickupNum = await calcNextPickupNumber();

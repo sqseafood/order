@@ -215,8 +215,13 @@ export async function POST(req: NextRequest) {
     // Each order is its own file — no read needed, no race condition possible.
     await saveOrder(order);
 
-    // Advance the counter (non-blocking — maxUsed guard self-heals if this fails)
-    saveCounter(pickupNum);
+    // Advance the counter — awaited so tomorrow's first order gets the right number.
+    // If this fails we log it but don't error the request; the order is already saved.
+    try {
+      await saveCounter(pickupNum);
+    } catch (err) {
+      console.error("Failed to save counter:", err);
+    }
 
     // Save customer to database (non-blocking)
     saveCustomer(customer);

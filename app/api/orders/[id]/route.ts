@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { put, list } from "@vercel/blob";
+import { list } from "@vercel/blob";
 import type { StoredOrder } from "../route";
 import { loadTodayOrders, saveOrder } from "../route";
 

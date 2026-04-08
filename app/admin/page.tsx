@@ -1371,13 +1371,13 @@ const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
                 </div>
               </div>
               <div>
-                <label className="text-[10px] uppercase font-semibold text-gray-500 mb-1 block">Items (from email)</label>
+                <label className="text-[10px] uppercase font-semibold text-gray-500 mb-1 block">Items (paste from confirmation email)</label>
                 <textarea
                   value={restoreNote}
                   onChange={(e) => setRestoreNote(e.target.value)}
-                  placeholder="Paste item list from the email here…"
-                  rows={3}
-                  className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-orange-400 resize-none"
+                  placeholder={"  Item# F001 • Salmon  Qty: 2  =  $45.00\n  Item# F002 • Tuna  Qty: 1  =  $22.00"}
+                  rows={4}
+                  className="w-full text-sm font-mono border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-orange-400 resize-none"
                 />
               </div>
               <div className="flex gap-2">

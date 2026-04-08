@@ -16,7 +16,19 @@ export interface StoredOrder {
   doneAt?: string;
 }
 
-function getTodayKey(): string {
+// Each order is stored as its own blob: order-YYYY-MM-DD-{pickupNumber}.json
+// This eliminates the read-modify-write race condition that could silently drop orders.
+function getTodayPrefix(): string {
+  const pacificStr = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
+  const d = new Date(pacificStr);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `order-${y}-${m}-${day}-`;
+}
+
+// Legacy key for the old daily-aggregate format (read-only, for migration)
+function getLegacyKey(): string {
   const pacificStr = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
   const d = new Date(pacificStr);
   const y = d.getFullYear();
@@ -25,26 +37,49 @@ function getTodayKey(): string {
   return `orders-${y}-${m}-${day}.json`;
 }
 
-async function loadTodayOrders(): Promise<StoredOrder[]> {
+export async function loadTodayOrders(): Promise<StoredOrder[]> {
   try {
-    const key = getTodayKey();
-    const { blobs } = await list({ prefix: key });
-    const blob = blobs.find((b) => b.pathname === key);
-    if (blob) {
-      const res = await fetch(blob.downloadUrl, { cache: "no-store" });
+    const prefix = getTodayPrefix();
+    const { blobs } = await list({ prefix });
+
+    if (blobs.length > 0) {
+      const results = await Promise.all(
+        blobs
+          .filter((b) => b.pathname.endsWith(".json"))
+          .map(async (b) => {
+            try {
+              const res = await fetch(b.downloadUrl, { cache: "no-store" });
+              if (res.ok) return (await res.json()) as StoredOrder;
+            } catch {}
+            return null;
+          })
+      );
+      return results.filter(Boolean) as StoredOrder[];
+    }
+
+    // No new-format orders yet — fall back to legacy daily file (migration path)
+    const legacyKey = getLegacyKey();
+    const { blobs: legacyBlobs } = await list({ prefix: legacyKey });
+    const legacyBlob = legacyBlobs.find((b) => b.pathname === legacyKey);
+    if (legacyBlob) {
+      const res = await fetch(legacyBlob.downloadUrl, { cache: "no-store" });
       if (res.ok) return await res.json();
     }
   } catch {}
   return [];
 }
 
-async function saveTodayOrders(orders: StoredOrder[]): Promise<void> {
-  const key = getTodayKey();
-  const body = JSON.stringify(orders, null, 2);
-  const opts = { access: "public" as const, contentType: "application/json", addRandomSuffix: false, allowOverwrite: true };
+export async function saveOrder(order: StoredOrder, prefix?: string): Promise<void> {
+  const key = `${prefix ?? getTodayPrefix()}${order.pickupNumber}.json`;
+  const opts = {
+    access: "public" as const,
+    contentType: "application/json",
+    addRandomSuffix: false,
+    allowOverwrite: true,
+  };
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      await put(key, body, opts);
+      await put(key, JSON.stringify(order, null, 2), opts);
       return;
     } catch (err) {
       if (attempt === 3) throw err;
@@ -62,25 +97,32 @@ interface CustomerRecord {
   orderCount: number;
 }
 
-// Calculate the next pickup number WITHOUT writing the counter yet.
-// The counter is only persisted after the order blob saves successfully,
-// so a failed save never burns a pickup number or causes duplicates.
-async function calcNextPickupNumber(existingOrders: StoredOrder[]): Promise<number> {
-  const { blobs } = await list({ prefix: "pickup-counter.json" });
-  const blob = blobs.find((b) => b.pathname === "pickup-counter.json");
+// Calculate the next pickup number without writing the counter yet.
+// Uses blob filenames to compute maxUsed — no need to fetch order data.
+async function calcNextPickupNumber(): Promise<number> {
+  const prefix = getTodayPrefix();
+  const [counterResult, ordersResult] = await Promise.all([
+    list({ prefix: "pickup-counter.json" }),
+    list({ prefix }),
+  ]);
+
   let counter = 10001;
-  if (blob) {
-    const res = await fetch(blob.downloadUrl, { cache: "no-store" });
+  const counterBlob = counterResult.blobs.find((b) => b.pathname === "pickup-counter.json");
+  if (counterBlob) {
+    const res = await fetch(counterBlob.downloadUrl, { cache: "no-store" });
     if (res.ok) {
       const data = await res.json();
       counter = (data.counter ?? 10000) + 1;
     }
   }
-  // Skip numbers already used today (guards against counter/blob getting out of sync)
-  const maxUsed = existingOrders.reduce((max, o) => {
-    const n = parseInt(o.pickupNumber);
-    return isNaN(n) ? max : Math.max(max, n);
+
+  // Guard against counter/blob desync by checking existing order filenames
+  const maxUsed = ordersResult.blobs.reduce((max, b) => {
+    const match = b.pathname.match(/(\d+)\.json$/);
+    const n = match ? parseInt(match[1]) : 0;
+    return Math.max(max, n);
   }, 10000);
+
   return Math.max(counter, maxUsed + 1);
 }
 
@@ -146,14 +188,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const todayOrders = await loadTodayOrders();
-    const pickupNum = await calcNextPickupNumber(todayOrders);
+    const pickupNum = await calcNextPickupNumber();
     const pickupNumber = pickupNum.toString();
 
-    // Commit the order to the blob FIRST.
-    // If this fails the customer sees an error and can retry — no email is sent,
-    // no pickup number is burned, and the counter stays correct.
-    todayOrders.push({
+    const order: StoredOrder = {
       id: pickupNumber,
       pickupNumber,
       customer,
@@ -161,11 +199,12 @@ export async function POST(req: NextRequest) {
       total,
       orderedAt: new Date().toISOString(),
       status: "new",
-    });
-    await saveTodayOrders(todayOrders);
+    };
 
-    // Order is saved. Advance the counter (non-blocking — if this fails the
-    // maxUsed guard in calcNextPickupNumber self-heals it on the next order).
+    // Each order is its own file — no read needed, no race condition possible.
+    await saveOrder(order);
+
+    // Advance the counter (non-blocking — maxUsed guard self-heals if this fails)
     saveCounter(pickupNum);
 
     // Save customer to database (non-blocking)

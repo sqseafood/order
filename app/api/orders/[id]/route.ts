@@ -1,19 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { put, list } from "@vercel/blob";
 import type { StoredOrder } from "../route";
+import { loadTodayOrders, saveOrder } from "../route";
 
-function getTodayKey(): string {
+function getTodayPrefix(): string {
   const pacificStr = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
   const d = new Date(pacificStr);
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
-  return `orders-${y}-${m}-${day}.json`;
+  return `order-${y}-${m}-${day}-`;
 }
 
-async function loadTodayOrders(): Promise<StoredOrder[]> {
+// Load a single order by ID — fast path that avoids fetching all orders.
+// Falls back to loading all today's orders (handles legacy daily-file format).
+async function loadOneOrder(id: string): Promise<StoredOrder | null> {
+  const key = `${getTodayPrefix()}${id}.json`;
   try {
-    const key = getTodayKey();
     const { blobs } = await list({ prefix: key });
     const blob = blobs.find((b) => b.pathname === key);
     if (blob) {
@@ -21,16 +24,10 @@ async function loadTodayOrders(): Promise<StoredOrder[]> {
       if (res.ok) return await res.json();
     }
   } catch {}
-  return [];
-}
 
-async function saveTodayOrders(orders: StoredOrder[]): Promise<void> {
-  await put(getTodayKey(), JSON.stringify(orders, null, 2), {
-    access: "public",
-    contentType: "application/json",
-    addRandomSuffix: false,
-    allowOverwrite: true,
-  });
+  // Not found as individual file — check legacy daily file
+  const all = await loadTodayOrders();
+  return all.find((o) => o.id === id) ?? null;
 }
 
 export async function PATCH(
@@ -44,8 +41,7 @@ export async function PATCH(
       staffName: string;
     };
 
-    const orders = await loadTodayOrders();
-    const order = orders.find((o) => o.id === id);
+    const order = await loadOneOrder(id);
     if (!order) {
       return NextResponse.json({ error: "Order not found." }, { status: 404 });
     }
@@ -54,7 +50,6 @@ export async function PATCH(
 
     if (action === "claim") {
       if (order.status !== "new") {
-        // Already claimed — return current state so UI can update
         return NextResponse.json({ conflict: true, order }, { status: 409 });
       }
       order.status = "processing";
@@ -68,7 +63,7 @@ export async function PATCH(
       order.doneAt = now;
     }
 
-    await saveTodayOrders(orders);
+    await saveOrder(order);
     return NextResponse.json({ success: true, order });
   } catch (err) {
     console.error("Order PATCH error:", err);

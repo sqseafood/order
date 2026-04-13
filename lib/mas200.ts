@@ -4,56 +4,51 @@ import { list } from "@vercel/blob";
 import type { Product } from "@/types";
 
 // ── PRN parser (fixed-width MAS 200 price list report) ──────────────────────
-// Column layout based on "NEW PRICE LIST" report format:
-//   0-30   DESCRIPTION
-//   31-46  ITEM#
-//   47-57  ORIGIN
-//   58-67  MOC (WILD/FARMED)
-//   68-88  PACKAGING + WEIGHT  (parsed with regex at end of line)
-//   last two decimals: U.PRICE  CASE PRICE
+// Column layout based on "INTERNAL USE INVENTORY REPORT" format:
+//   1-5    ITEM NUMBER
+//   9-11   WHS (warehouse, always 000)
+//   14-39  DESCRIPTION (English)
+//   40-60  VIETNAMESE DESCRIPTION (ignored)
+//   61-70  ORIGIN COUNTRY
+//   72-83  PACKAGING
+//   end:   UNIT PRICE  QTY  C.PRICE  (QTY is an integer between the two prices)
 
 function parsePRNLine(line: string): Partial<Product> | null {
-  // Skip header/blank lines
   if (!line.trim()) return null;
-  if (/^(Run Date|R\/M Date|DESCRIPTION|Page)/.test(line.trim())) return null;
 
-  // Item code starts at col 31 — must be uppercase letters+digits, len 4-8
-  const itemCode = line.substring(31, 47).trim();
-  if (!/^[A-Z][A-Z0-9]{2,7}$/.test(itemCode)) return null;
+  // Data lines start with a space then an item code (e.g. " C0029   000  …")
+  // followed by a 3-digit warehouse code. Non-data lines (headers, titles) won't match.
+  const itemMatch = line.match(/^\s([A-Z][A-Z0-9]{2,7})\s+\d{3}\s+/);
+  if (!itemMatch) return null;
 
-  // Extract the two prices from the end of the line (e.g. "  5.60  224.00")
-  const priceMatch = line.match(/([\d]+\.[\d]{2})\s+([\d]+\.[\d]{2})\s*$/);
+  const itemCode = itemMatch[1];
+
+  // Extract UNIT PRICE, QTY (integer), and C.PRICE from end of line
+  // e.g. "  5.60      341  224.00"
+  const priceMatch = line.match(/(\d+\.\d{2})\s+(\d+)\s+(\d+\.\d{2})\s*$/);
   if (!priceMatch) return null;
 
   const unitPrice = parseFloat(priceMatch[1]);
-  const casePrice = parseFloat(priceMatch[2]);
+  const casePrice = parseFloat(priceMatch[3]);
 
-  // Skip items with $0 case price (non-sellable / packaging items)
+  // Skip items with $0 case price (non-sellable / placeholder items)
   if (casePrice === 0) return null;
 
-  const name      = line.substring(0, 31).trim();
-  const origin    = line.substring(47, 58).trim();
-  const method    = line.substring(58, 68).trim();           // WILD / FARMED
-  const weightStr = line.substring(79, 89).trim();
-  // Weight col overlaps packaging — grab last standalone number before prices
-  const weightMatch = line
-    .substring(68, line.length - priceMatch[0].length)
-    .match(/\s+(\d+\.?\d*)\s*$/);
-  const weight = weightMatch ? parseFloat(weightMatch[1]) : 0;
-
-  // Clean up packaging: it's in cols 68-78 roughly
-  const packStr = line.substring(68, 79).trim();
+  // Fixed-width column extraction
+  const name      = line.substring(14, 40).trim();
+  const origin    = line.substring(61, 71).trim();
+  const packaging = line.substring(72, 84).trim();
 
   return {
     id:        itemCode,
-    name,
+    name:      name || itemCode,
     description: "",
     price:     casePrice,
     unitPrice,
-    packaging: packStr || weightStr,
+    packaging,
     origin,
-    method:    method || undefined,
-    weight,
+    method:    undefined,
+    weight:    0,
     pack:      "",
     packType:  "",
     category:  "SEAFOOD",

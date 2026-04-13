@@ -130,18 +130,22 @@ export async function PATCH(req: NextRequest) {
     const { products, fromBlob } = await loadCurrentProducts();
 
     const updateMap = new Map(
-      updates.map((u: { id: string; category: string; pack?: string; packType?: string }) => [u.id, u])
+      updates.map((u: { id: string; category: string; pack?: string; packType?: string; unitPrice?: string; price?: string }) => [u.id, u])
     );
 
     // Update existing products
     const updated = products.map((p: Product) => {
       if (!updateMap.has(p.id)) return p;
       const u = updateMap.get(p.id)!;
+      const newUnitPrice = u.unitPrice !== undefined && u.unitPrice !== "" ? parseFloat(u.unitPrice) : NaN;
+      const newCasePrice = u.price     !== undefined && u.price     !== "" ? parseFloat(u.price)     : NaN;
       return {
         ...p,
         category: u.category ?? p.category,
         ...(u.pack !== undefined && u.pack !== "" && { pack: u.pack }),
         ...(u.packType !== undefined && u.packType !== "" && { packType: u.packType }),
+        ...(!isNaN(newUnitPrice) && newUnitPrice > 0 && { unitPrice: newUnitPrice }),
+        ...(!isNaN(newCasePrice) && newCasePrice > 0 && { price: newCasePrice }),
       };
     });
 

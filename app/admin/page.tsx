@@ -529,6 +529,8 @@ const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [editPack, setEditPack] = useState("");
   const [editPackType, setEditPackType] = useState("");
   const [editCategory, setEditCategory] = useState("");
+  const [editUnitPrice, setEditUnitPrice] = useState("");
+  const [editCasePrice, setEditCasePrice] = useState("");
   const [editSaving, setEditSaving] = useState(false);
 
   async function loadItems() {
@@ -583,12 +585,21 @@ const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
       const res = await fetch("/api/admin/products", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ updates: [{ id, category: editCategory, pack: editPack, packType: editPackType }] }),
+        body: JSON.stringify({ updates: [{ id, category: editCategory, pack: editPack, packType: editPackType, unitPrice: editUnitPrice, price: editCasePrice }] }),
       });
       if (!res.ok) throw new Error("Save failed.");
+      const newUnitPrice = parseFloat(editUnitPrice);
+      const newCasePrice = parseFloat(editCasePrice);
       setAllItems((prev) =>
         prev ? prev.map((p) =>
-          p.id === id ? { ...p, category: editCategory || p.category, pack: editPack, packType: editPackType } : p
+          p.id === id ? {
+            ...p,
+            category: editCategory || p.category,
+            pack: editPack,
+            packType: editPackType,
+            ...(editUnitPrice !== "" && !isNaN(newUnitPrice) && { unitPrice: newUnitPrice }),
+            ...(editCasePrice !== "" && !isNaN(newCasePrice) && { price: newCasePrice }),
+          } : p
         ) : prev
       );
       setEditingId(null);
@@ -1108,6 +1119,8 @@ const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
                                         setEditCategory(p.category);
                                         setEditPack(p.pack ?? "");
                                         setEditPackType(p.packType ?? "");
+                                        setEditUnitPrice(p.unitPrice != null ? String(p.unitPrice) : "");
+                                        setEditCasePrice(p.price != null ? String(p.price) : "");
                                         setConfirmDeleteId(null);
                                       }}
                                       className="text-[11px] text-blue-400 hover:text-blue-600 border border-blue-200 hover:border-blue-400 px-2 py-1 rounded-lg transition-colors"
@@ -1181,6 +1194,30 @@ const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
                                         <datalist id="edit-packtype-list">
                                           {["Retail", "Bulk", "VP", "IWP", "IVP", "Box", "Tray"].map((v) => <option key={v} value={v} />)}
                                         </datalist>
+                                      </div>
+                                      <div className="w-24">
+                                        <label className="text-[10px] text-gray-500 uppercase font-semibold mb-1 block">Unit Price</label>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="0.01"
+                                          value={editUnitPrice}
+                                          onChange={(e) => setEditUnitPrice(e.target.value)}
+                                          placeholder="0.00"
+                                          className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-orange-400"
+                                        />
+                                      </div>
+                                      <div className="w-24">
+                                        <label className="text-[10px] text-gray-500 uppercase font-semibold mb-1 block">Case Price</label>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="0.01"
+                                          value={editCasePrice}
+                                          onChange={(e) => setEditCasePrice(e.target.value)}
+                                          placeholder="0.00"
+                                          className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-orange-400"
+                                        />
                                       </div>
                                       <div className="flex items-end">
                                         <button

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import { put, list } from "@vercel/blob";
 import type { CartItem } from "@/types";
+import { loadSettings } from "@/app/api/admin/settings/route";
 
 export interface StoredOrder {
   id: string;
@@ -227,6 +228,9 @@ export async function POST(req: NextRequest) {
     saveCustomer(customer);
 
     // Send emails after the order is safely persisted.
+    const settings = await loadSettings().catch(() => ({ orderEmailRecipients: [] as string[] }));
+    const extraRecipients = settings.orderEmailRecipients ?? [];
+
     const itemRows = items.map((i) =>
       `  Item# ${i.product.id} • ${i.product.name}  Qty: ${i.quantity}  =  $${(i.product.price * i.quantity).toFixed(2)}`
     ).join("\n");
@@ -266,10 +270,12 @@ Order Total: $${total.toFixed(2)}
       },
     });
 
+    const primaryRecipients = ["seaquestwarehouse@gmail.com", ...extraRecipients];
+
     await Promise.allSettled([
       transporter.sendMail({
         from: `"SeaQuest Orders" <${process.env.SMTP_USER}>`,
-        to: "seaquestwarehouse@gmail.com",
+        to: primaryRecipients.join(", "),
         subject: `New Order from ${customer.name}`,
         text: body,
       }),

@@ -352,7 +352,7 @@ export default function AdminPage() {
 
   const categories = preview ? Array.from(new Set(preview.map((p) => p.category))) : [];
 
-  const [tab, setTab] = useState<"products" | "catalog" | "items" | "customers" | "notifications" | "orders">("products");
+  const [tab, setTab] = useState<"products" | "catalog" | "items" | "customers" | "notifications" | "orders" | "settings">("products");
 
   // ── Orders tab state ───────────────────────────────────────────────────────
   const [ordersData, setOrdersData] = useState<StoredOrder[] | null>(null);
@@ -619,6 +619,70 @@ const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [waitlistLoading, setWaitlistLoading] = useState(false);
   const [waitlistError, setWaitlistError] = useState<string | null>(null);
 
+  // ── Settings tab state ─────────────────────────────────────────────────────
+  const [settingsRecipients, setSettingsRecipients] = useState<string[] | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [settingsStatus, setSettingsStatus] = useState<Status>(null);
+  const [newRecipient, setNewRecipient] = useState("");
+  const [settingsSaving, setSettingsSaving] = useState(false);
+
+  async function loadSettings() {
+    setSettingsLoading(true);
+    setSettingsError(null);
+    try {
+      const res = await fetch("/api/admin/settings");
+      if (!res.ok) throw new Error("Failed to load settings.");
+      const data = await res.json();
+      setSettingsRecipients(data.orderEmailRecipients ?? []);
+    } catch (err) {
+      setSettingsError((err as Error).message);
+    } finally {
+      setSettingsLoading(false);
+    }
+  }
+
+  async function saveRecipients(recipients: string[]) {
+    setSettingsSaving(true);
+    setSettingsStatus(null);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderEmailRecipients: recipients }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Save failed.");
+      setSettingsRecipients(data.orderEmailRecipients);
+      setSettingsStatus({ type: "success", message: "Settings saved." });
+    } catch (err) {
+      setSettingsStatus({ type: "error", message: (err as Error).message });
+    } finally {
+      setSettingsSaving(false);
+    }
+  }
+
+  function addRecipient() {
+    const email = newRecipient.trim().toLowerCase();
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRe.test(email)) {
+      setSettingsStatus({ type: "error", message: "Enter a valid email address." });
+      return;
+    }
+    if (settingsRecipients?.includes(email)) {
+      setSettingsStatus({ type: "error", message: "That email is already in the list." });
+      return;
+    }
+    const updated = [...(settingsRecipients ?? []), email];
+    setNewRecipient("");
+    saveRecipients(updated);
+  }
+
+  function removeRecipient(email: string) {
+    const updated = (settingsRecipients ?? []).filter((r) => r !== email);
+    saveRecipients(updated);
+  }
+
   async function loadWaitlist() {
     setWaitlistLoading(true);
     setWaitlistError(null);
@@ -685,7 +749,7 @@ const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
       {/* Tab nav */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl mb-6 flex-wrap">
-        {(["products", "catalog", "items", "customers", "notifications", "orders"] as const).map((t) => (
+        {(["products", "catalog", "items", "customers", "notifications", "orders", "settings"] as const).map((t) => (
           <button
             key={t}
             onClick={() => {
@@ -695,6 +759,7 @@ const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
               if (t === "catalog" && !catalogItems) loadCatalog();
               if (t === "items" && !allItems) loadItems();
               if (t === "orders") loadAdminOrders();
+              if (t === "settings" && settingsRecipients === null) loadSettings();
             }}
             className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
               tab === t ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
@@ -714,7 +779,8 @@ const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
               : t === "items" ? "Items"
               : t === "customers" ? "Customers"
               : t === "notifications" ? "Notify"
-              : "Orders"}
+              : t === "orders" ? "Orders"
+              : "Settings"}
           </button>
         ))}
       </div>
@@ -1592,6 +1658,89 @@ const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
                 {waitlist.length} notification{waitlist.length !== 1 ? "s" : ""} total
               </div>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* Settings tab */}
+      {tab === "settings" && (
+        <div>
+          <p className="text-sm text-gray-500 mb-4">
+            Order notification emails are always sent to{" "}
+            <span className="font-mono text-gray-700">seaquestwarehouse@gmail.com</span>.
+            Add additional recipients below.
+          </p>
+
+          {settingsError && (
+            <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700 mb-4">
+              {settingsError}
+            </div>
+          )}
+
+          {settingsStatus && (
+            <div
+              className={`p-3 rounded-xl border text-sm mb-4 ${
+                settingsStatus.type === "success"
+                  ? "bg-green-50 border-green-200 text-green-700"
+                  : "bg-red-50 border-red-200 text-red-700"
+              }`}
+            >
+              {settingsStatus.message}
+            </div>
+          )}
+
+          {settingsLoading ? (
+            <div className="text-center py-12 text-gray-400 text-sm">Loading…</div>
+          ) : (
+            <>
+              {/* Add recipient */}
+              <div className="flex gap-2 mb-4">
+                <input
+                  type="email"
+                  value={newRecipient}
+                  onChange={(e) => { setNewRecipient(e.target.value); setSettingsStatus(null); }}
+                  onKeyDown={(e) => { if (e.key === "Enter") addRecipient(); }}
+                  placeholder="name@example.com"
+                  className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  onClick={addRecipient}
+                  disabled={settingsSaving || !newRecipient.trim()}
+                  className="bg-blue-600 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                >
+                  Add
+                </button>
+              </div>
+
+              {/* Recipient list */}
+              <div className="rounded-2xl border border-gray-200 overflow-hidden">
+                {/* Primary recipient — always present, read-only */}
+                <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-100">
+                  <span className="text-sm font-mono text-gray-600">seaquestwarehouse@gmail.com</span>
+                  <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">primary</span>
+                </div>
+
+                {settingsRecipients && settingsRecipients.length === 0 && (
+                  <div className="text-center py-6 text-gray-400 text-sm">No additional recipients added yet.</div>
+                )}
+
+                {settingsRecipients && settingsRecipients.map((email) => (
+                  <div
+                    key={email}
+                    className="flex items-center justify-between px-4 py-3 bg-white border-b border-gray-100 last:border-0"
+                  >
+                    <span className="text-sm font-mono text-gray-700">{email}</span>
+                    <button
+                      onClick={() => removeRecipient(email)}
+                      disabled={settingsSaving}
+                      className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50 transition-colors"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
       )}

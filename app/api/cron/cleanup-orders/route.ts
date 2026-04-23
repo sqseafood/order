@@ -1,4 +1,4 @@
-import { list, del } from "@vercel/blob";
+import { list, del, put } from "@vercel/blob";
 import { NextResponse } from "next/server";
 
 // Runs daily via Vercel cron — deletes order files older than today
@@ -27,6 +27,40 @@ export async function GET(request: Request) {
       (b) => b.pathname.match(/^orders-\d{4}-\d{2}-\d{2}\.json$/) && b.pathname !== `orders-${dateStr}.json`
     ),
   ];
+
+  // Before deleting old files, advance the counter to the highest order number found.
+  // This prevents the next day's first order from repeating the last order number of
+  // the previous day when a saveCounter call silently failed during the day.
+  const maxInOldFiles = toDelete.reduce((max, b) => {
+    const match = b.pathname.match(/(\d+)\.json$/);
+    const n = match ? parseInt(match[1]) : 0;
+    return Math.max(max, n);
+  }, 0);
+
+  if (maxInOldFiles > 10000) {
+    try {
+      const { blobs: counterBlobs } = await list({ prefix: "pickup-counter.json" });
+      const counterBlob = counterBlobs.find((b) => b.pathname === "pickup-counter.json");
+      let currentCounter = 0;
+      if (counterBlob) {
+        const res = await fetch(counterBlob.downloadUrl, { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          currentCounter = data.counter ?? 0;
+        }
+      }
+      if (maxInOldFiles > currentCounter) {
+        await put("pickup-counter.json", JSON.stringify({ counter: maxInOldFiles }), {
+          access: "public",
+          contentType: "application/json",
+          addRandomSuffix: false,
+          allowOverwrite: true,
+        });
+      }
+    } catch (err) {
+      console.error("Failed to advance counter during cleanup:", err);
+    }
+  }
 
   if (toDelete.length === 0) {
     return NextResponse.json({ deleted: 0 });

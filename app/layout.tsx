@@ -3,6 +3,7 @@ import { Geist } from "next/font/google";
 import "./globals.css";
 import { CartProvider } from "@/context/CartContext";
 import Navbar from "@/components/Navbar";
+import CartBar from "@/components/CartBar";
 import PWARegister from "./pwa-register";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
@@ -30,7 +31,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${geist.variable} font-sans bg-gray-50 min-h-screen`}>
         <CartProvider>
           <Navbar />
-          <main className="max-w-lg mx-auto px-4 pb-24 pt-4">{children}</main>
+          <main className="max-w-lg mx-auto px-4 pb-32 pt-4">{children}</main>
+          <CartBar />
         </CartProvider>
         <PWARegister />
       </body>

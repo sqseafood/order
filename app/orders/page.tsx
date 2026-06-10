@@ -262,13 +262,18 @@ export default function OrdersPage() {
 }
 
 // ── Order Card ──────────────────────────────────────────────────────────────
-function printOrder(order: StoredOrder) {
+function printOrder(order: StoredOrder, cashPaid?: number, change?: number) {
   const itemRows = order.items
     .map(
       (i) =>
         `<tr><td style="padding:4px 8px 4px 0">${i.product.id}</td><td style="padding:4px 8px">${i.product.name}</td><td style="padding:4px 0 4px 8px;text-align:right">×${i.quantity}</td><td style="padding:4px 0 4px 16px;text-align:right">$${(i.product.price * i.quantity).toFixed(2)}</td></tr>`
     )
     .join("");
+  const cashRows =
+    cashPaid !== undefined && change !== undefined
+      ? `<tr><td colspan="3" style="padding-top:4px">Cash received</td><td style="text-align:right;padding-top:4px">$${cashPaid.toFixed(2)}</td></tr>
+         <tr><td colspan="3" style="padding-top:4px;font-weight:bold">Change</td><td style="text-align:right;padding-top:4px;font-weight:bold">$${change.toFixed(2)}</td></tr>`
+      : "";
   const win = window.open("", "_blank", "width=400,height=600");
   if (!win) return;
   win.document.write(`<!DOCTYPE html><html><head><title>Order #${order.pickupNumber}</title>
@@ -280,7 +285,10 @@ function printOrder(order: StoredOrder) {
     <p><strong>${order.customer.name}</strong></p>
     <p>${order.customer.phone}</p>
     <table><tbody>${itemRows}</tbody>
-    <tfoot><tr><td colspan="3">Total</td><td style="text-align:right">$${order.total.toFixed(2)}</td></tr></tfoot>
+    <tfoot>
+      <tr><td colspan="3">Total</td><td style="text-align:right">$${order.total.toFixed(2)}</td></tr>
+      ${cashRows}
+    </tfoot>
     </table>
     <script>window.onload=()=>{window.print();window.close()}<\/script>
     </body></html>`);
@@ -330,7 +338,7 @@ function OrderCard({
         <div className="flex items-center gap-2">
           <span className="text-xs text-gray-400">{formatTime(order.orderedAt)}</span>
           <button
-            onClick={() => printOrder(order)}
+            onClick={() => printOrder(order, hasEnough ? cashPaid : undefined, hasEnough ? change : undefined)}
             className="text-xs text-gray-600 hover:text-gray-900 bg-white border border-gray-300 px-2.5 py-1 rounded-lg transition-colors font-medium"
             title="Print order"
           >

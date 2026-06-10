@@ -303,6 +303,11 @@ function OrderCard({
   const isDone = order.status === "done";
   const isMine = order.claimedBy === staffName;
 
+  const [cashAmount, setCashAmount] = useState("");
+  const cashPaid = parseFloat(cashAmount) || 0;
+  const change = cashPaid - order.total;
+  const hasEnough = cashAmount !== "" && cashPaid >= order.total;
+
   return (
     <div
       className={`bg-white rounded-2xl border shadow-sm overflow-hidden transition-opacity ${
@@ -355,6 +360,47 @@ function OrderCard({
           <span>Total</span>
           <span>${order.total.toFixed(2)}</span>
         </div>
+      </div>
+
+      {/* Cash Register */}
+      <div className="px-4 py-3 border-b border-gray-100">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Cash Payment</p>
+        <div className="flex items-center gap-2 mb-2">
+          <div className="relative flex-1">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">$</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              min="0"
+              placeholder="Amount received"
+              value={cashAmount}
+              onChange={(e) => setCashAmount(e.target.value)}
+              className="w-full pl-7 pr-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-transparent"
+            />
+          </div>
+          {[20, 50, 100].map((bill) => (
+            <button
+              key={bill}
+              onClick={() => setCashAmount(bill.toString())}
+              className={`text-xs px-2.5 py-2 rounded-xl border font-medium transition-colors ${
+                cashAmount === bill.toString()
+                  ? "bg-orange-500 text-white border-orange-500"
+                  : "border-gray-200 text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+              ${bill}
+            </button>
+          ))}
+        </div>
+        {cashAmount && (
+          <div className={`flex justify-between items-center text-sm font-bold rounded-xl px-3 py-2.5 ${
+            hasEnough ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"
+          }`}>
+            <span>{hasEnough ? "Change" : "Short by"}</span>
+            <span className="text-base">${Math.abs(change).toFixed(2)}</span>
+          </div>
+        )}
       </div>
 
       {/* Status / Action */}
